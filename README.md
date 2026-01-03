@@ -1,6 +1,7 @@
 # Healthy Fresno Air (HFA)
 
-Healthy Fresno Air (HFA) is a **map-first air quality intelligence platform** that allows users to explore air quality by geography (State → County → ZIP) using near–real-time sensor data.  
+Healthy Fresno Air (HFA) is a **map-first air quality intelligence platform** that allows users to explore air quality by geography (State → County → ZIP) using near–real-time sensor data.
+
 The system is designed for **fast map rendering**, **reliable data freshness**, and **clear separation of concerns** between ingestion, transformation, serving, and UI.
 
 This repository contains the full end-to-end system: data pipelines, analytics warehouse, backend API, and frontend application.
@@ -14,9 +15,9 @@ HFA follows a simple but production-grade flow:
 **Data Sources → Warehouse → API → Web UI**
 
 ### Data Sources
-- **PurpleAir**: live air quality sensor readings (micro-batched)
-- **ZIP boundaries**: GeoJSON / shapefiles
-- **Demographics**: static CSV or API-based sources
+- **PurpleAir** — live air quality sensor readings (micro-batched)
+- **ZIP boundaries** — GeoJSON / shapefiles
+- **Demographics** — static CSV or API-based sources
 
 ### Warehouse (System of Record)
 - **DuckDB** for local development
@@ -32,7 +33,7 @@ HFA follows a simple but production-grade flow:
 - **FastAPI** provides a read-only API over curated (Gold) tables
 - Returns **map-friendly payloads** and time series
 - Applies caching, validation, and pagination
-- Does *not* perform heavy transformations
+- Does **not** perform heavy transformations
 
 ### Frontend
 - **Next.js** + **MapLibre**
@@ -65,24 +66,64 @@ All data served to users must be derivable from tables in the warehouse.
 
 ## Repository Structure
 
-```text
-hfa/
-  apps/
-    api/            # FastAPI backend
-    web/            # Next.js + MapLibre frontend
+hfa/  
+├── apps/  
+│   ├── api/            # FastAPI backend  
+│   └── web/            # Next.js + MapLibre frontend  
+│  
+├── warehouse/  
+│   └── dbt/            # dbt models (RAW / SILVER / GOLD)  
+│  
+├── pipelines/  
+│   ├── ingestion/      # Python ingestion jobs  
+│   └── scripts/        # One-off operational scripts  
+│  
+├── configs/            # Environment and logging configs  
+├── docs/               # Architecture, ADRs, runbooks  
+├── .github/  
+│   └── workflows/      # CI and scheduled pipelines  
+│  
+├── pyproject.toml  
+└── README.md  
 
-  warehouse/
-    dbt/            # dbt models (RAW / SILVER / GOLD)
+Each directory maps to a **runtime or ownership boundary**, making the system easy to evolve without refactoring the repo layout.
 
-  pipelines/
-    ingestion/      # Python ingestion jobs
-    scripts/        # one-off operational scripts
+---
 
-  configs/          # environment and logging configs
-  docs/             # architecture, ADRs, runbooks
+## Local Development (High Level)
 
-  .github/
-    workflows/      # CI and scheduled pipelines
+Detailed setup instructions live in component-level READMEs.
 
-  pyproject.toml
-  README.md
+Typical local flow:
+1. Run ingestion jobs against local DuckDB
+2. Execute dbt models to build Silver/Gold tables
+3. Start the FastAPI service
+4. Run the Next.js web app
+
+---
+
+## Operational Notes
+
+- All scheduled pipelines run via **GitHub Actions**
+- Pipeline runs write metadata to an `ops.pipeline_runs` table
+- Slack notifications are sent on:
+  - pipeline failures
+  - data freshness breaches
+- All served datasets include an `updated_at` timestamp
+
+---
+
+## Status
+
+This repository represents the **v1 production-ready architecture**.
+
+The system is intentionally designed to evolve:
+- DuckLake and external object storage can be added as data volume grows
+- Airflow or Prefect can replace GitHub Actions if orchestration complexity increases
+- Vector tiles can replace simplified geometry layers at higher traffic
+
+---
+
+## License
+
+MIT
