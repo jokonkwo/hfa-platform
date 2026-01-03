@@ -1,0 +1,44 @@
+[project]
+name = "hfa"
+version = "0.1.0"
+description = "Healthy Fresno Air – map-first air quality intelligence platform"
+requires-python = ">=3.11"
+readme = "README.md"
+license = { file = "LICENSE" }
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+fix = true
+show-fixes = true
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle
+  "F",   # pyflakes
+  "I",   # isort
+  "B",   # flake8-bugbear
+  "UP",  # pyupgrade
+]
+ignore = [
+  "E501",  # line length handled by formatter
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.pytest.ini_options]
+testpaths = ["apps", "pipelines"]
+python_files = ["test_*.py"]
+addopts = "-q --disable-warnings --maxfail=1"
+
+[tool.coverage.run]
+branch = true
+source = ["apps", "pipelines"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
