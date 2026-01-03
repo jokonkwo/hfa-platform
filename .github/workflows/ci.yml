@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+jobs:
+  python-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff pytest coverage
+
+      - name: Ruff (lint)
+        run: |
+          ruff check .
+
+      - name: Ruff (format check)
+        run: |
+          ruff format --check .
+
+      - name: Pytest
+        run: |
+          pytest
+
+      # NOTE: We will enable dbt once warehouse/dbt exists.
+      # Leaving this as a placeholder keeps CI evolution obvious and intentional.
+      - name: dbt compile (placeholder)
+        if: ${{ false }}
+        run: |
+          echo "dbt compile will be enabled once the dbt project is added."
