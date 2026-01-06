@@ -38,3 +38,35 @@ models:
         tests: [not_null]
       - name: aqi_category
         tests: [not_null]
+        
+  - name: gold_zip_hourly
+    description: "Hourly ZIP-level AQI computed as average across sensors in a ZIP."
+    columns:
+      - name: zip
+        tests: [not_null]
+      - name: hour_ts
+        tests: [not_null]
+      - name: aqi_avg
+        tests: [not_null]
+      - name: aqi_category
+        tests: [not_null]
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["zip", "hour_ts"]
+
+  - name: gold_zip_daily
+    description: "Daily ZIP-level AQI stats (avg/max) computed from 10-min readings."
+    columns:
+      - name: zip
+        tests: [not_null]
+      - name: date
+        tests: [not_null]
+      - name: aqi_avg
+        tests: [not_null]
+      - name: aqi_max
+        tests: [not_null]
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["zip", "date"]
