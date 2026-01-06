@@ -24,6 +24,7 @@ class PipelineConfig:
     purpleair_read_key: str | None
     purpleair_sensor_ids: list[int] | None
     ingestion_interval_minutes: int
+    sensor_zip_map_json: str | None
 
     # Alerts / Ops
     slack_webhook_url: str | None
@@ -64,6 +65,7 @@ def load_config() -> PipelineConfig:
     purpleair_read_key = os.getenv("PURPLEAIR_READ_KEY")
     purpleair_sensor_ids = _parse_sensor_ids(os.getenv("PURPLEAIR_SENSOR_IDS"))
     ingestion_interval_minutes = int(os.getenv("INGESTION_INTERVAL_MINUTES", "10"))
+    sensor_zip_map_json = os.getenv("SENSOR_ZIP_MAP_JSON")    
 
     slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL")
     data_freshness_breach_minutes = int(os.getenv("DATA_FRESHNESS_BREACH_MINUTES", "30"))
@@ -81,6 +83,7 @@ def load_config() -> PipelineConfig:
         purpleair_read_key=purpleair_read_key,
         purpleair_sensor_ids=purpleair_sensor_ids,
         ingestion_interval_minutes=ingestion_interval_minutes,
+        sensor_zip_map_json=sensor_zip_map_json,
         slack_webhook_url=slack_webhook_url,
         data_freshness_breach_minutes=data_freshness_breach_minutes,
         external_data_dir=external_data_dir,
