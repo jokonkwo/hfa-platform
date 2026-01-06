@@ -1,0 +1,39 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "RAW layer sources ingested by pipelines (append-only)."
+    schema: raw
+    tables:
+      - name: raw_purpleair_readings
+        description: "RAW PurpleAir readings (append-only)."
+        columns:
+          - name: sensor_id
+            description: "PurpleAir sensor identifier."
+            tests:
+              - not_null
+          - name: ts
+            description: "Observation timestamp (UTC)."
+            tests:
+              - not_null
+          - name: ingested_at
+            description: "Pipeline ingestion timestamp (UTC)."
+            tests:
+              - not_null
+
+      # These sources may not exist until their ingestion pipelines are implemented.
+      # We define them now as part of the contract; dbt models can reference them when ready.
+
+      - name: raw_zip_boundaries
+        description: "ZIP polygon boundaries (GeoJSON/Shapefile ingested to DuckDB)."
+        columns:
+          - name: zip
+            tests:
+              - not_null
+
+      - name: raw_demographics
+        description: "ZIP-level demographic attributes (optional v1)."
+        columns:
+          - name: zip
+            tests:
+              - not_null
