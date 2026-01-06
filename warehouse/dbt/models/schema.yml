@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: raw_purpleair_readings
+    description: "Stable wrapper over the RAW PurpleAir source table."
+    columns:
+      - name: sensor_id
+        tests: [not_null]
+      - name: ts
+        tests: [not_null]
+      - name: ingested_at
+        tests: [not_null]
+
+  - name: silver_sensor_readings_10min
+    description: "10-minute bucketed, deduplicated, corrected PM2.5 with derived AQI per sensor."
+    columns:
+      - name: sensor_id
+        tests: [not_null]
+      - name: ts_10m
+        tests: [not_null]
+      - name: aqi
+        tests: [not_null]
+      - name: aqi_category
+        tests: [not_null]
+
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["sensor_id", "ts_10m"]
+
+  - name: gold_zip_now
+    description: "Current (latest) ZIP-level AQI computed as average across sensors in a ZIP."
+    columns:
+      - name: zip
+        tests: [not_null]
+      - name: ts_10m
+        tests: [not_null]
+      - name: aqi
+        tests: [not_null]
+      - name: aqi_category
+        tests: [not_null]
