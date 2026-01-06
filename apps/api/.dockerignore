@@ -1,0 +1,41 @@
+# apps/api/.dockerignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Venv
+.venv/
+venv/
+env/
+
+# Repo noise
+.git/
+.github/
+.idea/
+.vscode/
+.DS_Store
+
+# Node/web artifacts (not needed)
+node_modules/
+.next/
+out/
+
+# dbt artifacts
+warehouse/dbt/target/
+warehouse/dbt/logs/
+warehouse/dbt/dbt_packages/
+
+# Local data/artifacts
+data/
+*.duckdb
+*.db
+
+# Secrets
+.env
+.env.*
