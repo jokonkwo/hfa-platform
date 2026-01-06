@@ -37,3 +37,14 @@ sources:
           - name: zip
             tests:
               - not_null
+
+      - name: raw_sensors
+        description: "Pipeline-maintained sensor registry with static sensor->ZIP mapping."
+        columns:
+          - name: sensor_id
+            tests: [not_null]
+          - name: zip
+            tests: [not_null]
+          - name: updated_at
+            tests: [not_null]
+
