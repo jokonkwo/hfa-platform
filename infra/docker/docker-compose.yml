@@ -1,0 +1,27 @@
+# infra/docker/docker-compose.yml
+services:
+  api:
+    build:
+      context: ../../
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../../.env
+    environment:
+      # Common case: local dev uses local DuckDB file
+      HFA_ENV: local
+      HFA_WAREHOUSE_MODE: local
+      HFA_DUCKDB_PATH: /app/data/local/hfa.duckdb
+    volumes:
+      # Persist local DuckDB file outside the container lifecycle
+      - ../../data/local:/app/data/local
+
+    # Optional: if you want live-reload later, we can add a dev compose profile
+    # and mount source + run uvicorn --reload.
+
+# Optional future service for shared caching (only when you enable it)
+#  redis:
+#    image: redis:7-alpine
+#    ports:
+#      - "6379:6379"
