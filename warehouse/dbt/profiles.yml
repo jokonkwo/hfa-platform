@@ -1,0 +1,22 @@
+hfa_warehouse:
+  target: local
+  outputs:
+
+    # Local dev: writes to a DuckDB file on disk
+    local:
+      type: duckdb
+      path: "{{ env_var('HFA_DUCKDB_PATH', './data/local/hfa.duckdb') }}"
+      threads: 4
+
+    # Optional: MotherDuck (prod)
+    #
+    # This uses DuckDB's MotherDuck DSN format:
+    #   md:<database_name>
+    #
+    # Assumption: dbt-duckdb passes the `path` through to DuckDB connect().
+    # If your dbt-duckdb version behaves differently, we will adjust after the
+    # first `dbt debug` attempt.
+    motherduck:
+      type: duckdb
+      path: "md:{{ env_var('MOTHERDUCK_DATABASE') }}"
+      threads: 4
