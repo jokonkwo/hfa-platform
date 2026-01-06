@@ -1,0 +1,20 @@
+# Core API
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+
+# Warehouse
+duckdb>=0.10
+
+# Pipelines / HTTP
+requests>=2.31
+tenacity>=8.2
+python-dotenv>=1.0
+
+# Testing
+pytest>=8.0
+httpx>=0.27
+
+# Tooling
+ruff>=0.6
+coverage>=7.6
