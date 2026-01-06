@@ -28,9 +28,9 @@ dedup as (
 
 final as (
   select
-    sensor_id,
-    ts_10m,
-    pm2_5_raw,
+    d.sensor_id,
+    d.ts_10m,
+    d.pm2_5_raw,
     {{ purpleair_pm25_correction('pm2_5_raw') }} as pm2_5_corrected,
     cast({{ pm25_to_aqi(purpleair_pm25_correction('pm2_5_raw')) }} as integer) as aqi,
     case
@@ -42,13 +42,13 @@ final as (
       when {{ pm25_to_aqi(purpleair_pm25_correction('pm2_5_raw')) }} <= 300 then 'Very Unhealthy'
       else 'Hazardous'
     end as aqi_category,
-    -- Placeholder join keys (zip/county) will be added once dim_sensors exists in dbt or ingestion.
-    -- For now, keep them null to allow dbt to run end-to-end without geo ingestion yet.
-    cast(null as varchar) as zip,
-    cast(null as varchar) as county_name,
+    s.zip,
+    s.county_name,
     current_timestamp as updated_at
-  from dedup
-  where rn = 1
+  from dedup d
+  left join {{ ref('dim_sensors') }} s
+    on d.sensor_id = s.sensor_id
+  where d.rn = 1
 )
 
 select * from final
