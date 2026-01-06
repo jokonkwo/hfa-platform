@@ -7,6 +7,7 @@ from pipelines.common.config import PipelineConfig
 from pipelines.common.db import connect
 from pipelines.common.logging_setup import get_logger
 from pipelines.ingestion.purpleair.client import PurpleAirClient
+from pipelines.ingestion.purpleair.sensors_registry import upsert_raw_sensors
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,9 @@ def load_raw_purpleair(cfg: PipelineConfig) -> dict[str, Any]:
 
     payload = client.fetch_sensors(sensor_ids=cfg.purpleair_sensor_ids)
     readings = client.parse_readings(payload)
+    
+    # Maintain sensor registry (raw.raw_sensors) for downstream dim_sensors model
+    upsert_raw_sensors(cfg, readings)    
 
     if not readings:
         logger.warning("No PurpleAir readings returned")
