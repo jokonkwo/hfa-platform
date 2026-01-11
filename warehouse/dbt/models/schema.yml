@@ -22,7 +22,6 @@ models:
         tests: [not_null]
       - name: aqi_category
         tests: [not_null]
-
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: ["sensor_id", "ts_10m"]
@@ -50,7 +49,6 @@ models:
         tests: [not_null]
       - name: aqi_category
         tests: [not_null]
-
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: ["zip", "hour_ts"]
@@ -66,7 +64,18 @@ models:
         tests: [not_null]
       - name: aqi_max
         tests: [not_null]
-
     tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: ["zip", "date"]
+
+  - name: dim_sensors
+    description: "Sensor dimension with ZIP mapping derived via spatial join (sensor point within ZCTA polygon)."
+    columns:
+      - name: sensor_id
+        tests: [not_null]
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
+      - name: zip
+        tests: [not_null]
