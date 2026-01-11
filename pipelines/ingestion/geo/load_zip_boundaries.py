@@ -92,6 +92,23 @@ def ensure_raw_zip_table(con: Any) -> None:
         """
     )
 
+def _ensure_counties_loaded(con: Any, statefp: str = "06") -> None:
+    exists = con.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema = 'raw' AND table_name = 'raw_county_boundaries';
+        """
+    ).fetchone()[0]
+    if exists == 0:
+        raise RuntimeError("raw.raw_county_boundaries not found. Run: geo cli load-counties --statefp 06")
+
+    cnt = con.execute(
+        "SELECT COUNT(*) FROM raw.raw_county_boundaries WHERE statefp = ?;",
+        [statefp],
+    ).fetchone()[0]
+    if cnt == 0:
+        raise RuntimeError("No CA counties found in raw.raw_county_boundaries. Run: load-counties --statefp 06")
 
 def load_zip_boundaries(cfg: PipelineConfig, scope: str = "us", url: str = TIGER_ZCTA_URL) -> GeoIngestStats:
     """
@@ -152,9 +169,23 @@ def load_zip_boundaries(cfg: PipelineConfig, scope: str = "us", url: str = TIGER
         if scope == "ca":
             if statefp_col:
                 where_clause = f"WHERE {statefp_col} = '06'"
-                logger.info("Filtering ZCTAs to California", extra={"statefp_col": statefp_col})
+                logger.info("Filtering ZCTAs to California (STATEFP)", extra={"statefp_col": statefp_col})
             else:
-                logger.warning("No STATEFP column found; falling back to full US ZCTA load")
+                # Robust fallback: filter using CA county union geometry
+                _ensure_counties_loaded(con, statefp="06")
+                logger.info("Filtering ZCTAs to California using county union geometry")
+
+                # Build CA union geometry in a temp view
+                con.execute("DROP VIEW IF EXISTS _ca_union;")
+                con.execute(
+                    """
+                    CREATE VIEW _ca_union AS
+                    SELECT ST_Union_Agg(geometry) AS geom
+                    FROM raw.raw_county_boundaries
+                    WHERE statefp = '06';
+                    """
+                )
+                where_clause = "WHERE ST_Contains((SELECT geom FROM _ca_union), ST_Centroid(geometry))"
 
         # Replace existing table on each run (static dataset)
         con.execute("DELETE FROM raw.raw_zip_boundaries;")
