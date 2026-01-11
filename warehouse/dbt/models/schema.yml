@@ -37,6 +37,9 @@ models:
         tests: [not_null]
       - name: aqi_category
         tests: [not_null]
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["zip"]
         
   - name: gold_zip_hourly
     description: "Hourly ZIP-level AQI computed as average across sensors in a ZIP."
