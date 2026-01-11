@@ -27,17 +27,23 @@ with sensors as (
 zips as (
   select
     cast(zip as varchar) as zip,
-    cast(county_name as varchar) as county_name,
     geometry
   from {{ source('raw', 'raw_zip_boundaries') }}
   where zip is not null and geometry is not null
 ),
 
+zip_county as (
+  select
+    zip,
+    county_name
+  from {{ ref('dim_zip_county') }}
+)
+
 matches as (
   select
     s.*,
     z.zip,
-    z.county_name,
+    zc.county_name,
     row_number() over (
       partition by s.sensor_id
       order by z.zip
@@ -45,6 +51,8 @@ matches as (
   from sensors s
   left join zips z
     on ST_Contains(z.geometry, ST_Point(s.lon, s.lat))
+  left join zip_county zc
+    on z.zip = zc.zip
 )
 
 select
