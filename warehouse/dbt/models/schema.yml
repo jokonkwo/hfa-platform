@@ -79,3 +79,14 @@ models:
         tests: [not_null]
       - name: zip
         tests: [not_null]
+
+  - name: dim_zip_county
+    description: "ZIP (ZCTA) to county mapping (CA only) derived via centroid-in-county spatial join."
+    columns:
+      - name: zip
+        tests: [not_null]
+      - name: county_name
+        tests: [not_null]
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ["zip"]
