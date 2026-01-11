@@ -8,18 +8,29 @@ sources:
       - name: raw_purpleair_readings
         description: "RAW PurpleAir readings (append-only)."
         columns:
+      - name: sensor_id
+        description: "PurpleAir sensor identifier."
+        tests:
+          - not_null
+      - name: ts
+        description: "Observation timestamp (UTC)."
+        tests:
+          - not_null
+      - name: ingested_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+      - name: raw_sensors
+        description: "Pipeline-maintained sensor registry (sensor_id + lat/lon + activity). ZIP is derived via spatial join in dbt."
+        columns:
           - name: sensor_id
-            description: "PurpleAir sensor identifier."
-            tests:
-              - not_null
-          - name: ts
-            description: "Observation timestamp (UTC)."
-            tests:
-              - not_null
-          - name: ingested_at
-            description: "Pipeline ingestion timestamp (UTC)."
-            tests:
-              - not_null
+            tests: [not_null]
+          - name: lat
+            tests: [not_null]
+          - name: lon
+            tests: [not_null]
+          - name: updated_at
+            tests: [not_null]
 
       # These sources may not exist until their ingestion pipelines are implemented.
       # We define them now as part of the contract; dbt models can reference them when ready.
