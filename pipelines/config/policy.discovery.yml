@@ -1,0 +1,26 @@
+region:
+  name: "Fresno County"
+  state: "CA"
+  county_name: "Fresno"
+  # v1 bbox (rough Fresno County area) — adjust later if needed
+  bbox:
+    nw_lat: 37.2000
+    nw_lon: -120.2500
+    se_lat: 36.4500
+    se_lon: -119.2000
+
+policy:
+  outdoor_only: true
+  freshness_minutes: 60
+  min_sensors_per_zip: 1
+  max_per_zip: 5
+
+ingest:
+  cadence_minutes: 10
+  max_ids_per_call: 1000
+  # keep lean for discovery; live polling uses more fields
+  discovery_fields: "sensor_index,latitude,longitude,location_type,last_seen"
+
+pricing:
+  points_per_usd: 1000000  # placeholder; set to MotherDuck/PurpleAir pricing model if you have it
+  fields_for_live: 5       # estimate only; we'll align with actual ingestion fields later
