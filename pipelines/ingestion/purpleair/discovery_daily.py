@@ -11,7 +11,7 @@ import requests
 
 from pipelines.config.loader import load_yaml
 from pipelines.common.logging_setup import get_logger
-from pipelines.common.http import request_with_retries
+from pipelines.common.http import get_json
 
 logger = get_logger(__name__)
 
@@ -47,14 +47,12 @@ def run_discovery() -> None:
 
     logger.info("Running PurpleAir discovery", extra={"bbox": bbox})
 
-    r = request_with_retries(
-        "GET",
-        "https://api.purpleair.com/v1/sensors",
-        headers={"X-API-Key": pa_key},
-        params=params,
-        timeout=60,
+    payload = get_json(
+    "https://api.purpleair.com/v1/sensors",
+    headers={"X-API-Key": pa_key},
+    params=params,
+    timeout_s=60.0,
     )
-    payload = r.json()
 
     df = pd.DataFrame(payload["data"], columns=payload["fields"])
     if df.empty:
