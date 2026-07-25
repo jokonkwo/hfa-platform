@@ -1,73 +1,168 @@
-# Plan: First Vertical Slice (v2 — grounded in actual repo state)
+# Plan: First Vertical Slice (v3 — reconciled against deployed schema)
 
-**Supersedes the earlier version of this plan**, which was written against a stale zip and assumed a Postgres migration that has since been reversed (see `CLAUDE.md` §2). This version is grounded in what's actually in the repo as of the current state check.
+**Supersedes v2**, which planned against the `warehouse/dbt/` models as if they were the current state. The actual ground truth is the `HFA_DEV` MotherDuck database, audited 2026-07-24 in `docs/deployed_schema_audit.md`. That deployed schema (flat `bronze/silver/gold/api_*` naming, built Oct–Nov 2025 from uncommitted scripts) is more complete than the dbt models and is the target to port into version control.
 
-**Goal:** prove the existing pipeline works end to end with a *correct* AQI value, then expose it through one real API endpoint and one map dot. Given how much is already built, this is less "build from scratch" and more "verify, fix, and connect."
+**Goal:** get the existing deployed pipeline fully committed, fix the correction formula to EPA/Barkjohn (adding `temperature_f`), populate the empty rollup tables (`silver_zip_hourly`, `silver_zip_daily`), and wire the `api_*` views to real FastAPI endpoints. The map proof follows from that.
 
 ---
 
-## Step 1 — Verify the pipeline has actually run, not just that it looks correct
+## Step 1 — Confirm HFA_DEV still has live-ish data and the pipeline can run
 
-Before fixing or building anything, establish ground truth:
+Before committing anything, confirm the database state is what the audit showed:
+
+```sql
+-- Should return 160 rows, last ts_utc in Nov 2025
+SELECT COUNT(*), MAX(ts_utc) FROM bronze_sensor_now_raw_10min;
+
+-- Should return 8 rows
+SELECT * FROM gold_zip_now ORDER BY aqi DESC;
+
+-- Should return 1 row (coverage summary)
+SELECT * FROM api_coverage_today;
+
+-- Confirm these are still 0 — means rollup jobs haven't run yet
+SELECT COUNT(*) FROM silver_zip_hourly;
+SELECT COUNT(*) FROM silver_zip_daily;
 ```
-# Confirm raw tables have real data
-duckdb <path or md: DSN> -c "SELECT COUNT(*), MAX(ts) FROM raw.raw_purpleair_readings;"
-duckdb <path or md: DSN> -c "SELECT COUNT(*) FROM raw.raw_sensors;"
 
-# Confirm the dbt run actually executes without error
-cd warehouse/dbt && dbt run
+If `gold_zip_now` is empty or missing, the pipeline stalled — diagnose before proceeding.
 
-# Confirm gold_zip_now has real rows (this was 0 in the original zip)
-duckdb <path or md: DSN> -c "SELECT * FROM gold_zip_now LIMIT 10;"
+---
+
+## Step 2 — Commit the deployed DDL and transform logic into version control
+
+The bronze/silver/gold/api_* tables and views exist in MotherDuck but have no committed code that creates them. Fix that first, before any new changes, so there is a baseline.
+
+**2a. Write DDL for all deployed tables and views**
+
+Create `warehouse/sql/schema_hfa_dev.sql` (or equivalent location) containing `CREATE TABLE IF NOT EXISTS` + `CREATE OR REPLACE VIEW` statements matching the exact schemas in `docs/deployed_schema_audit.md`. This is a snapshot, not a migration system — its purpose is to make the current deployed state reproducible.
+
+**2b. Commit the transform logic**
+
+The silver and gold transforms (sensor correction, ZIP rollup, gold enrichment) exist as data in MotherDuck tables but their generating SQL was never committed. Write `warehouse/sql/transforms/` scripts (or dbt models — see §2c) that produce:
+- `silver_sensor_corrected_10min` from `bronze_sensor_now_raw_10min` + panel map
+- `silver_zip_now_10min` from `silver_sensor_corrected_10min`
+- `gold_zip_now` from `silver_zip_now_10min`
+
+Use the deployed table names exactly. The deployed correction formula (as a starting point only, pending Step 3) is:
 ```
-If any of these are empty or error, that's the actual first bug to fix — not a new feature, a broken assumption.
+pm25_corr = 0.524 × avg(pm25_cf1_a, pm25_cf1_b) − 0.0862 × humidity_a + 5.75
+```
 
-## Step 2 — Fix the correction formula (decided, not yet done)
+**2c. Align dbt models to deployed naming**
 
-1. `pipelines/ingestion/purpleair/client.py`: update the PurpleAir API field request to include channel A and B `cf_1` PM2.5 readings, not just the blended `pm2_5` field
-2. `pipelines/ingestion/purpleair/load_raw.py` (`ensure_raw_tables`): add the new channel A/B columns to `raw.raw_purpleair_readings`
-3. `warehouse/dbt/macros/pm25_correction.sql`: replace the placeholder formula with:
-   ```
-   PM2.5_corrected = 0.541 × PA_cf1(avg of channel A and B) − 0.0618 × RH + 0.00534 × T + 3.634
-   ```
-4. `warehouse/dbt/models/silver/silver_sensor_readings_10min.sql`: confirm it references the updated macro correctly (it already calls `purpleair_pm25_correction`, so this should mostly be a macro-body change plus new source columns)
-5. Re-run `dbt run`, confirm `silver_sensor_readings_10min.pm2_5_corrected` produces sane values (sanity check: corrected values should generally track below raw PurpleAir values, consistent with published PurpleAir overreporting bias)
+The existing `warehouse/dbt/models/` use `raw/silver/gold` schema-qualified names. Rename them to target the flat deployed names (`bronze_sensor_now_raw_10min`, `silver_sensor_corrected_10min`, etc.) and update `dbt_project.yml` accordingly. This is a rename + extend, not a rewrite.
 
-## Step 3 — Resolve the discovery → ingestion handoff gap
+---
 
-`discovery_panel.py` builds a table of the 5 freshest sensors per ZIP, but no code was found connecting that output to `PURPLEAIR_SENSOR_IDS` (which drives actual ingestion in `load_raw_purpleair`). Confirm:
-- Is this handoff manual today (someone reads the panel and updates the env var by hand)?
-- Should it be automated (a script that reads `silver.discovery_panel_daily` and writes `PURPLEAIR_SENSOR_IDS`)?
-This needs a decision, not just a fix — it's a real design gap, not a bug.
+## Step 3 — Fix the correction formula (EPA/Barkjohn, with temperature)
 
-## Step 4 — Reconcile `discovery_daily.py`/`discovery_panel.py` with the shared connection pattern
+The deployed pipeline used a non-EPA formula with no temperature term. The target formula (Barkjohn et al., 2021, used on AirNow's Fire and Smoke Map):
 
-Both scripts currently hardcode their own MotherDuck DSN connection (`duckdb.connect(f"md:{md_db}?motherduck_token={md_token}")`) instead of using `pipelines/common/db.py`'s `connect()`. Minor, but worth fixing for consistency and so `CLAUDE.md`'s "one connection pattern" holds true.
+```
+PM2.5_corrected = 0.541 × avg(pm25_cf1_a, pm25_cf1_b) − 0.0618 × RH + 0.00534 × T + 3.634
+```
 
-## Step 5 — Build the first real API endpoint
+This requires three coordinated changes:
 
-- `apps/api`: add `GET /v1/zips/{zip}/now`, querying `gold_zip_now` via `apps/api/src/hfa-api/db/connection.py` (stays DuckDB/MotherDuck, per the reversed decision)
-- Response shape must match `docs/data_contract.md` — check before writing the response model
+**3a. Add `temperature_f` to bronze ingestion**
 
-## Step 6 — Minimal map proof
+1. `pipelines/ingestion/purpleair/load_raw.py` (`ensure_raw_tables`): add `temperature_f DOUBLE` column to `bronze_sensor_now_raw_10min`
+2. `pipelines/ingestion/purpleair/client.py`: add `temperature` to the PurpleAir API field list and map it to `temperature_f` in the returned record — the API already returns it, it was just never persisted
 
-- One static page or minimal MapLibre setup rendering one marker for one real Fresno ZIP, sourced from the new endpoint
-- Not the start of `apps/web` — a proof the pipeline is correct end to end
+**3b. Rewrite the correction macro**
 
-## Step 7 — Address the GitHub Actions cron reliability gap
+`warehouse/dbt/macros/pm25_correction.sql`: replace the current formula with:
+```sql
+0.541 * (pm25_cf1_a + pm25_cf1_b) / 2.0
+  - 0.0618 * humidity_a
+  + 0.00534 * temperature_f
+  + 3.634
+```
 
-Independent of everything above (see `CLAUDE.md` §2) — still needs either an external `workflow_dispatch` trigger or a loosened freshness SLA in `docs/data_contract.md`. Don't let this stay silently unresolved once the rest of the slice works.
+**3c. Verify**
+
+After a fresh ingestion poll (which now captures `temperature_f`) and a dbt run:
+- Corrected values should be lower than raw PurpleAir values on average — consistent with published PurpleAir overreporting bias
+- At typical Fresno conditions (T ~65–90°F, RH ~20–60%), a raw PM2.5 of 10 µg/m³ should correct to roughly 5–8 µg/m³
+
+The deployed formula (Step 2b) may remain as a fallback reference; the EPA formula is what goes into the dbt macro and any production output.
+
+---
+
+## Step 4 — Populate `silver_zip_hourly` and `silver_zip_daily`
+
+Both tables have schema but 0 rows. These rollup jobs were never run during the Oct–Nov 2025 window.
+
+**Target schemas** (from `docs/deployed_schema_audit.md`):
+
+`silver_zip_hourly`: `hour_utc`, `zip`, `town`, `pm25_corr`, `aqi`, `sample_size`, `coverage_bins`
+
+`silver_zip_daily`: `date`, `zip`, `town`, `pm25_mean`, `pm25_p95`, `pm25_max`, `aqi_exceed_101`, `aqi_exceed_151`, `coverage_hours`
+
+Write dbt models (or scheduled SQL jobs) that aggregate `silver_sensor_corrected_10min` into these tables. `coverage_bins` = number of 10-min bins that had at least one valid reading in the hour. `aqi_exceed_101` / `aqi_exceed_151` = count of hours where AQI exceeded those thresholds.
+
+Once populated, `api_zip_hourly` and `api_zip_daily` views become live automatically (they are thin pass-through views already in place).
+
+---
+
+## Step 5 — Resolve the discovery → ingestion handoff
+
+`discovery_panel.py` builds `bronze_panel_zipmap_daily` (top-5-freshest-sensors-per-ZIP), but no committed code connects that to the sensor list used in `load_raw_purpleair`. The deployed pipeline must have had this handoff somewhere — it ran end-to-end, but the connecting code is missing from git.
+
+Confirm: is the handoff manual (someone updates `PURPLEAIR_SENSOR_IDS` by hand after discovery runs), or was there an automated script? Write and commit whichever is correct.
+
+---
+
+## Step 6 — Reconcile the discovery scripts' connection pattern
+
+`discovery_daily.py` and `discovery_panel.py` hardcode their own MotherDuck DSN (`duckdb.connect(f"md:{md_db}?motherduck_token={md_token}")`) instead of using `pipelines/common/db.py`'s `connect()`. Switch them to the shared helper for consistency.
+
+---
+
+## Step 7 — Build the FastAPI endpoints against the `api_*` views
+
+The `api_*` views in HFA_DEV already define the exact response shapes. `apps/api` must serve these shapes — do not invent new ones.
+
+| Endpoint | Source view | Key columns |
+|---|---|---|
+| `GET /v1/zips/now` | `api_zip_now` | `zip`, `town`, `pm25`, `aqi`, `category`, `sample_size`, `freshness_pct`, `qc_badge`, `updated_ts` |
+| `GET /v1/zips/{zip}/now` | `api_zip_now` WHERE zip | Same, filtered |
+| `GET /v1/zips/{zip}/hourly` | `api_zip_hourly` | `hour_utc`, `zip`, `town`, `pm25`, `aqi`, `sample_size`, `coverage_bins` |
+| `GET /v1/zips/{zip}/daily` | `api_zip_daily` | `date`, `zip`, `town`, `pm25_mean`, `pm25_p95`, `pm25_max`, `aqi_exceed_101`, `aqi_exceed_151`, `coverage_hours` |
+| `GET /v1/coverage/today` | `api_coverage_today` | `date`, `qualified_zips`, `total_zips`, `panel_size` |
+
+Any deviation from these column names or types must be reflected in `docs/data_contract.md` before the endpoint is written.
+
+---
+
+## Step 8 — Minimal map proof
+
+One static page or minimal MapLibre setup rendering dots for all ZIPs in `api_zip_now`, colored by AQI category. Sourced from the new `/v1/zips/now` endpoint. This is not the start of `apps/web` — it's proof the pipeline is correct end to end with real data.
+
+---
+
+## Step 9 — Address the GitHub Actions cron reliability gap
+
+Independent of everything above — `on.schedule` is documented as best-effort with 5-30+ min delays. Needs either an external `workflow_dispatch` trigger (e.g., cron-job.org or GitHub's own scheduled `workflow_dispatch`) or a freshness SLA in `docs/data_contract.md` that explicitly accepts the delay. Do not let this stay silently unresolved once the rest of the slice works.
 
 ---
 
 ## Order of operations
 
-1 (verify) → 2 (correction formula) → 3 (handoff decision) → 4 (connection consistency, can parallelize with 3) → 5 (API) → 6 (map proof) → 7 (cron, can happen anytime after step 1, doesn't block the rest)
+1 (verify deployed state) → 2 (commit DDL + deployed transforms) → 3 (EPA formula + temperature_f) → 4 (hourly/daily rollups) → 5+6 (handoff + connection pattern, can parallelize) → 7 (API endpoints) → 8 (map proof) → 9 (cron, can happen anytime after step 1)
+
+Steps 3 and 4 depend on step 2 being committed first so there's a stable baseline to diff against.
+
+---
 
 ## Definition of done
 
-- `dbt run` succeeds against real data, `gold_zip_now` has non-null rows with a properly EPA-corrected AQI
-- Discovery → ingestion handoff is either automated or explicitly documented as manual
-- `GET /v1/zips/{zip}/now` returns the contract-defined shape
-- One marker renders on a map from real pipeline data
+- All deployed HFA_DEV tables/views have committed DDL and generating SQL/dbt models in the repo
+- `bronze_sensor_now_raw_10min` has `temperature_f`; ingestion persists it on each poll
+- `pm25_correction.sql` implements the EPA/Barkjohn formula; corrected values are sanity-checked against expected ranges
+- `silver_zip_hourly` and `silver_zip_daily` have real rows; `api_zip_hourly` and `api_zip_daily` return data
+- Discovery → ingestion handoff is committed (automated or explicitly documented as manual)
+- `GET /v1/zips/now`, `GET /v1/zips/{zip}/hourly`, `GET /v1/zips/{zip}/daily`, `GET /v1/coverage/today` all return the shapes defined by the `api_*` views
+- One map renders real ZIP-level AQI from the live endpoint
 - Cron reliability has an explicit resolution (fixed or knowingly deferred with a stated SLA)
