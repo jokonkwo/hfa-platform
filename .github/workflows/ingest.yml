@@ -50,6 +50,24 @@ jobs:
           pip install -r requirements.txt
           pip install dbt-duckdb
 
+      - name: Check secrets are present
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          PURPLEAIR_API_KEY: ${{ secrets.PURPLEAIR_API_KEY }}
+          PURPLEAIR_SENSOR_IDS: ${{ secrets.PURPLEAIR_SENSOR_IDS }}
+        run: |
+          missing=""
+          [ -z "$MOTHERDUCK_TOKEN" ]    && missing="$missing MOTHERDUCK_TOKEN"
+          [ -z "$PURPLEAIR_API_KEY" ]   && missing="$missing PURPLEAIR_API_KEY"
+          [ -z "$PURPLEAIR_SENSOR_IDS" ] && missing="$missing PURPLEAIR_SENSOR_IDS"
+          if [ -n "$missing" ]; then
+            echo "ERROR: the following repo secrets are missing or empty:$missing"
+            echo "Go to https://github.com/jokonkwo/hfa-platform/settings/secrets/actions"
+            echo "and add each as a Repository secret (not an Environment secret)."
+            exit 1
+          fi
+          echo "All required secrets are present."
+
       - name: Run ingestion
         env:
           MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
