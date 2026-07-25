@@ -1,4 +1,4 @@
-{{ config(materialized='table') }}
+{{ config(materialized='table', tags=['daily']) }}
 
 select
     cast(hour_utc as date)                                             as date,

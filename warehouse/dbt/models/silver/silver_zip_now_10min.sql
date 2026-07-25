@@ -1,4 +1,10 @@
-{{ config(materialized='table') }}
+{{
+  config(
+    materialized='incremental',
+    unique_key=['zip', 'ts_utc'],
+    tags=['realtime']
+  )
+}}
 
 with zip_agg as (
     select
@@ -11,6 +17,9 @@ with zip_agg as (
               / count(*)                                                   as freshness_pct,
         sum(case when not ab_agree then 1 else 0 end)                     as disagree_count
     from {{ ref('silver_sensor_corrected_10min') }}
+    {% if is_incremental() %}
+    where ts_utc > (select max(ts_utc) from {{ this }})
+    {% endif %}
     group by ts_utc, zip, town
 )
 

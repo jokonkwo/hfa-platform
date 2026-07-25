@@ -1,4 +1,10 @@
-{{ config(materialized='table') }}
+{{
+  config(
+    materialized='incremental',
+    unique_key=['sensor_index', 'ts_utc'],
+    tags=['realtime']
+  )
+}}
 
 -- As-of join: for each bronze reading, use the most recent panel entry on or
 -- before the reading date. This handles readings on dates when the discovery
@@ -16,6 +22,9 @@ with readings as (
     where pm25_cf1_a is not null
       and pm25_cf1_b is not null
       and humidity_a is not null
+    {% if is_incremental() %}
+      and ts_utc > (select max(ts_utc) from {{ this }})
+    {% endif %}
 ),
 
 joined as (

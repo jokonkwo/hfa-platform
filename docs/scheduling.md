@@ -1,31 +1,56 @@
-# Ingestion Scheduling
+# Scheduling
 
 ## Why not GitHub Actions `on.schedule` alone
 
 GitHub's `on.schedule` trigger is best-effort. GitHub documents that scheduled workflows
 can be delayed by 5–30 minutes (or more) during high load. This makes it unsuitable as
-the sole trigger for a 10-minute ingestion cadence: the worst-case delay exceeds the
-target freshness window.
+the sole trigger for time-sensitive workflows. The fix: use `on.workflow_dispatch` as the
+primary trigger, called by an external scheduler that hits the GitHub API directly.
+`on.schedule` stays in each workflow as a fallback only.
 
-The fix: use `on.workflow_dispatch` as the primary trigger, called by an external
-scheduler that hits the GitHub API directly. `on.schedule` stays in the workflow as a
-fallback in case the external scheduler is down.
+---
 
-## External scheduler setup (one-time, manual)
+## Workflows
 
-This is an account-level setup step outside the repo. It cannot be automated here.
+Two scheduled workflows exist with different cadences:
+
+| Workflow | File | Cadence | What it does |
+|---|---|---|---|
+| Ingest PurpleAir | `ingest.yml` | Every 10 minutes | Fetches PurpleAir readings → writes bronze → runs `tag:realtime` dbt models |
+| Rollup transforms | `rollup.yml` | Hourly | Runs `tag:hourly` and `tag:daily` dbt models |
+
+Each needs its own external scheduler entry.
+
+---
+
+## One-time setup (manual, account-level)
 
 ### 1. Create a GitHub Personal Access Token (PAT)
 
 In your GitHub account settings:
 - Go to **Settings → Developer settings → Personal access tokens → Fine-grained tokens**
-- Create a new token scoped to the `jokonkwo/hfa-platform` repository
-- Grant the **Actions: Read and write** permission (this allows triggering `workflow_dispatch`)
-- Set an expiry and store the token in a password manager — you will need it in step 3
+- Create a token scoped to the `jokonkwo/hfa-platform` repository
+- Grant **Actions: Read and write** permission
+- Store the token securely — you will use it in both scheduler entries below
 
-### 2. Configure the external scheduler
+### 2. Add repository secrets
 
-Use [cron-job.org](https://cron-job.org) (free tier supports 1-minute intervals):
+In **Settings → Secrets and variables → Actions** on `jokonkwo/hfa-platform`:
+
+| Secret name | Value |
+|---|---|
+| `MOTHERDUCK_TOKEN` | Full token from MotherDuck UI (`mdt_...` string) |
+| `PURPLEAIR_API_KEY` | PurpleAir API key |
+| `PURPLEAIR_SENSOR_IDS` | Comma-separated sensor IDs (same as `.env`) |
+
+`MOTHERDUCK_DATABASE` is set as a plain env var in both workflows (`hfa_dev`) and is not a secret.
+
+### 3. Configure cron-job.org (two separate entries)
+
+Use [cron-job.org](https://cron-job.org) (free tier supports 1-minute intervals).
+cron-job.org setup path: **Dashboard → Create cronjob → Advanced → Headers / Request body**
+
+**Entry 1 — 10-minute ingestion:**
 
 | Field | Value |
 |---|---|
@@ -37,38 +62,39 @@ Use [cron-job.org](https://cron-job.org) (free tier supports 1-minute intervals)
 | Header: `X-GitHub-Api-Version` | `2022-11-28` |
 | Body (JSON) | `{"ref": "main"}` |
 
-cron-job.org setup path: **Dashboard → Create cronjob → Advanced → Headers / Request body**
+**Entry 2 — hourly rollup:**
 
-### 3. Add repository secrets
-
-In the `jokonkwo/hfa-platform` repository settings (**Settings → Secrets and variables → Actions**), add:
-
-| Secret name | Value |
+| Field | Value |
 |---|---|
-| `MOTHERDUCK_TOKEN` | Full token from MotherDuck UI (the `mdt_...` string) |
-| `PURPLEAIR_API_KEY` | PurpleAir API key |
-| `PURPLEAIR_SENSOR_IDS` | Comma-separated sensor IDs (same as `PURPLEAIR_SENSOR_IDS` in `.env`) |
-
-`MOTHERDUCK_DATABASE` is set as a plain env var in the workflow (`hfa_dev`) and does not
-need to be a secret.
+| URL | `https://api.github.com/repos/jokonkwo/hfa-platform/actions/workflows/rollup.yml/dispatches` |
+| Method | `POST` |
+| Interval | Every 60 minutes |
+| Header: `Authorization` | `Bearer <your-pat>` |
+| Header: `Accept` | `application/vnd.github+json` |
+| Header: `X-GitHub-Api-Version` | `2022-11-28` |
+| Body (JSON) | `{"ref": "main"}` |
 
 ### 4. Verify
 
-After setup, trigger the workflow manually once from the GitHub Actions tab
-(**Actions → Ingest PurpleAir → Run workflow**) to confirm secrets and connectivity are
-correct before relying on the scheduler.
+Trigger each workflow once manually from the GitHub Actions tab
+(**Actions → [workflow name] → Run workflow**) to confirm secrets and connectivity before
+enabling the external schedulers.
 
 Check `MD_INFORMATION_SCHEMA.QUERY_HISTORY` in MotherDuck to confirm rows are landing
-in `bronze_sensor_now_raw_10min` at the expected cadence.
+in `bronze_sensor_now_raw_10min` and that dbt models are running at the expected cadence.
 
-## Freshness expectations with this setup
+---
 
-With `workflow_dispatch` called every 10 minutes by an external scheduler:
-- Typical end-to-end latency: ~1–2 minutes (scheduler fires → GitHub queues → runner
-  starts → PurpleAir API call → MotherDuck write)
-- Worst-case: ~3–5 minutes if the runner queue is busy
-- A reading absent for **>20 minutes** indicates a scheduler or pipeline failure and
-  should be investigated
+## Freshness expectations
 
-The `on.schedule` fallback fires roughly every 10 minutes but may drift by 5–30 minutes.
-It exists only to prevent a complete data gap if the external scheduler goes down.
+**Ingestion + realtime dbt (ingest.yml, every 10 min):**
+- Typical end-to-end latency: ~1–3 minutes (scheduler → GitHub runner → PurpleAir API → MotherDuck write → dbt incremental run)
+- Worst-case: ~5 minutes if the runner queue is busy
+- A reading gap exceeding **20 minutes** indicates a scheduler or pipeline failure
+
+**Rollup dbt (rollup.yml, hourly):**
+- Hourly and daily aggregates lag the realtime data by up to ~1 hour by design
+- `silver_zip_hourly` and `silver_zip_daily` are full-table rebuilds on each run
+
+The `on.schedule` fallback in both workflows may drift by 5–30 minutes. It exists only
+to limit data gaps if the external scheduler is down, not to meet the freshness target.

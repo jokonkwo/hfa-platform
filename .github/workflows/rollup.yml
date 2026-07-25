@@ -1,0 +1,53 @@
+# Hourly and daily rollup transforms.
+#
+# PRIMARY TRIGGER: workflow_dispatch, called by an external scheduler once per hour.
+# FALLBACK TRIGGER: on.schedule kept as a backup if the external scheduler goes down.
+#
+# External scheduler setup (one-time, manual):
+#   See docs/scheduling.md for the full setup guide.
+#   Short version: configure a separate cron-job.org entry to POST to
+#   https://api.github.com/repos/jokonkwo/hfa-platform/actions/workflows/rollup.yml/dispatches
+#   once per hour with a GitHub token that has the `workflow` scope.
+
+name: Rollup transforms
+
+on:
+  schedule:
+    # Fallback only — GitHub may delay this. See header note above.
+    - cron: "0 * * * *"
+
+  workflow_dispatch:
+    # Primary trigger — called by external scheduler via GitHub API.
+
+jobs:
+  rollup:
+    name: Run hourly and daily rollup models
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      HFA_ENV: staging
+      HFA_WAREHOUSE_MODE: motherduck
+      MOTHERDUCK_DATABASE: hfa_dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install dbt-duckdb
+
+      - name: Run rollup models
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: |
+          cd warehouse/dbt
+          dbt run --select tag:hourly tag:daily --target motherduck

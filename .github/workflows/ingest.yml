@@ -48,6 +48,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install dbt-duckdb
 
       - name: Run ingestion
         env:
@@ -56,3 +57,10 @@ jobs:
           PURPLEAIR_SENSOR_IDS: ${{ secrets.PURPLEAIR_SENSOR_IDS }}
         run: |
           python -m pipelines.ingestion.purpleair.cli load-raw
+
+      - name: Run realtime dbt models
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+        run: |
+          cd warehouse/dbt
+          dbt run --select tag:realtime --target motherduck
