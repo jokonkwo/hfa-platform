@@ -1,23 +1,16 @@
 # Hourly and daily rollup transforms.
 #
-# PRIMARY TRIGGER: workflow_dispatch, called by an external scheduler once per hour.
-# FALLBACK TRIGGER: on.schedule kept as a backup if the external scheduler goes down.
+# PAUSED: rollup cadence is deliberately off while continuous ingestion is paused
+# (no point rolling up data that isn't accumulating). See ingest.yml and
+# docs/scheduling.md. To resume: re-enable the cron-job.org entry for this workflow.
 #
-# External scheduler setup (one-time, manual):
-#   See docs/scheduling.md for the full setup guide.
-#   Short version: configure a separate cron-job.org entry to POST to
-#   https://api.github.com/repos/jokonkwo/hfa-platform/actions/workflows/rollup.yml/dispatches
-#   once per hour with a GitHub token that has the `workflow` scope.
+# TRIGGER: workflow_dispatch only — supports manual runs and cron-job.org calls
+# when the external scheduler is re-enabled.
 
 name: Rollup transforms
 
 on:
-  schedule:
-    # Fallback only — GitHub may delay this. See header note above.
-    - cron: "0 * * * *"
-
   workflow_dispatch:
-    # Primary trigger — called by external scheduler via GitHub API.
 
 jobs:
   rollup:

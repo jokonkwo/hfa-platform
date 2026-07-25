@@ -25,7 +25,7 @@ A map-first air quality intelligence platform for Fresno County, in the pattern 
 | Map geometry | PMTiles, generated via Tippecanoe | Static file, hosted on Cloudflare R2, read directly by MapLibre. Not yet implemented. |
 | Web | Next.js + MapLibre GL JS | Not yet implemented — `apps/web` doesn't exist. |
 | Mobile | Expo + React Native | Not yet implemented — `apps/mobile` doesn't exist. |
-| Scheduling | GitHub Actions — **known unresolved issue** | `on.schedule` is documented by GitHub as best-effort with 5-30+ min delays. Still needs either an external trigger (`workflow_dispatch` via a free scheduler) or a loosened freshness SLA. Do not assume this is fixed. |
+| Scheduling | **Paused** — pipeline proven, ingestion deliberately off | `on.schedule` removed from both workflows (2026-07-25). cron-job.org is configured and was firing every 10 min, but ingestion is paused while PurpleAir API point budget is confirmed sustainable. Both workflows are `workflow_dispatch`-only; manual runs work via the Actions tab or `gh workflow run`. To resume: re-enable the cron-job.org jobs. See `docs/scheduling.md`. |
 | PurpleAir sourcing | Two-phase: small existing public sensor set now, nonprofit-owned sensors post-POC | Free API access applies once sensors are owned. |
 | Cost monitoring | Watch MotherDuck CU consumption via `MD_INFORMATION_SCHEMA.QUERY_HISTORY` once running live. `bronze_api_cost_daily` in HFA_DEV estimates ~$0.15/day at 40 sensors × 10min cadence. Monitor spatial join queries (`dim_sensors`, `dim_zip_county`) specifically — MotherDuck notes these cost more on Pulse. |
 
@@ -122,7 +122,7 @@ A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the 
 - Any API route beyond `/health` in `apps/api`
 - SQL/Python code for `silver_zip_hourly` and `silver_zip_daily` rollups
 - The EPA/Barkjohn correction formula (with temperature)
-- External trigger or SLA fix for the GitHub Actions cron reliability issue
+- cron-job.org re-enable (ingestion paused — see §2 Scheduling row and `docs/scheduling.md`)
 - Committed DDL/transforms for the deployed bronze/silver/gold tables
 
 ### Open question on the discovery → ingestion handoff

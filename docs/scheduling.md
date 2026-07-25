@@ -1,25 +1,39 @@
 # Scheduling
 
+## Current status — ingestion paused
+
+Continuous 10-minute ingestion is **deliberately paused** as of 2026-07-25 while
+PurpleAir API point budget is confirmed sustainable. The pipeline is proven working
+end to end (every step green in CI). No code needs to be rebuilt to resume.
+
+**To resume continuous ingestion:**
+1. Re-enable the cron-job.org job for `ingest.yml` (disable → enable toggle in the dashboard).
+2. Re-enable the cron-job.org job for `rollup.yml`.
+3. Optionally restore `on.schedule` fallback triggers in both workflow files (see the
+   commented-out blocks removed 2026-07-25 — they can be copied back verbatim).
+
+---
+
 ## Why not GitHub Actions `on.schedule` alone
 
-GitHub's `on.schedule` trigger is best-effort. GitHub documents that scheduled workflows
-can be delayed by 5–30 minutes (or more) during high load. This makes it unsuitable as
-the sole trigger for time-sensitive workflows. The fix: use `on.workflow_dispatch` as the
-primary trigger, called by an external scheduler that hits the GitHub API directly.
-`on.schedule` stays in each workflow as a fallback only.
+GitHub's `on.schedule` trigger is best-effort and documented to lag 5–30 minutes (or
+more) during high load. It is unsuitable as the sole trigger for a 10-minute freshness
+target. The approach: use `on.workflow_dispatch` as the primary trigger, called by
+cron-job.org which POSTs to the GitHub API on a precise interval. `on.schedule` can
+be kept as a fallback but is not the primary driver.
 
 ---
 
 ## Workflows
 
-Two scheduled workflows exist with different cadences:
+Two workflows exist with different cadences (both currently paused):
 
 | Workflow | File | Cadence | What it does |
 |---|---|---|---|
 | Ingest PurpleAir | `ingest.yml` | Every 10 minutes | Fetches PurpleAir readings → writes bronze → runs `tag:realtime` dbt models |
 | Rollup transforms | `rollup.yml` | Hourly | Runs `tag:hourly` and `tag:daily` dbt models |
 
-Each needs its own external scheduler entry.
+Each needs its own cron-job.org entry.
 
 ---
 
@@ -33,17 +47,17 @@ In your GitHub account settings:
 - Grant **Actions: Read and write** permission
 - Store the token securely — you will use it in both scheduler entries below
 
-### 2. Add repository secrets
+### 2. Repository secrets required
 
 In **Settings → Secrets and variables → Actions** on `jokonkwo/hfa-platform`:
 
 | Secret name | Value |
 |---|---|
-| `MOTHERDUCK_TOKEN` | Full token from MotherDuck UI (`mdt_...` string) |
+| `MOTHERDUCK_TOKEN` | Full token from MotherDuck UI (with or without `mdt_` prefix — both work) |
 | `PURPLEAIR_API_KEY` | PurpleAir API key |
-| `PURPLEAIR_SENSOR_IDS` | Comma-separated sensor IDs (same as `.env`) |
 
-`MOTHERDUCK_DATABASE` is set as a plain env var in both workflows (`hfa_dev`) and is not a secret.
+`MOTHERDUCK_DATABASE` and `PURPLEAIR_SENSOR_IDS` are plain env vars embedded in the
+workflow files, not secrets.
 
 ### 3. Configure cron-job.org (two separate entries)
 
@@ -85,7 +99,7 @@ in `bronze_sensor_now_raw_10min` and that dbt models are running at the expected
 
 ---
 
-## Freshness expectations
+## Freshness expectations (when running)
 
 **Ingestion + realtime dbt (ingest.yml, every 10 min):**
 - Typical end-to-end latency: ~1–3 minutes (scheduler → GitHub runner → PurpleAir API → MotherDuck write → dbt incremental run)
@@ -95,6 +109,3 @@ in `bronze_sensor_now_raw_10min` and that dbt models are running at the expected
 **Rollup dbt (rollup.yml, hourly):**
 - Hourly and daily aggregates lag the realtime data by up to ~1 hour by design
 - `silver_zip_hourly` and `silver_zip_daily` are full-table rebuilds on each run
-
-The `on.schedule` fallback in both workflows may drift by 5–30 minutes. It exists only
-to limit data gaps if the external scheduler is down, not to meet the freshness target.

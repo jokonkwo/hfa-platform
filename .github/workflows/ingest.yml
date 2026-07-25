@@ -1,27 +1,20 @@
-# PurpleAir ingestion — runs every 10 minutes.
+# PurpleAir ingestion.
 #
-# IMPORTANT: GitHub Actions `on.schedule` is best-effort and can lag 5–30+ minutes,
-# making it unsuitable as the sole trigger for a 10-minute freshness target.
+# PAUSED: continuous 10-minute ingestion is deliberately off while PurpleAir API
+# point budget is confirmed sustainable. The pipeline is proven working end to end.
+# To resume: re-enable the cron-job.org job and optionally restore the on.schedule
+# fallback below. Nothing needs to be rebuilt.
 #
-# PRIMARY TRIGGER: workflow_dispatch, called by an external scheduler every 10 minutes.
-# FALLBACK TRIGGER: on.schedule kept as a backup if the external scheduler goes down.
+# TRIGGER: workflow_dispatch only — supports manual runs via the Actions tab or
+# `gh workflow run ingest.yml`, and will accept calls from cron-job.org when
+# the external scheduler is re-enabled.
 #
-# External scheduler setup (one-time, manual):
-#   See docs/scheduling.md for the full setup guide.
-#   Short version: configure cron-job.org (or equivalent) to POST to
-#   https://api.github.com/repos/jokonkwo/hfa-platform/actions/workflows/ingest.yml/dispatches
-#   every 10 minutes with a GitHub token that has the `workflow` scope.
+# See docs/scheduling.md for the full setup guide.
 
 name: Ingest PurpleAir
 
 on:
-  schedule:
-    # Fallback only — GitHub may delay this by 5–30+ min. See header note above.
-    - cron: "*/10 * * * *"
-
   workflow_dispatch:
-    # Primary trigger — called by external scheduler via GitHub API.
-    # No inputs required; all config comes from repository secrets.
 
 jobs:
   load-raw:
