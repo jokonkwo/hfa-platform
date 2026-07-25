@@ -4,15 +4,7 @@
 
   "formatters": {
     "json": {
-      "format": "{"
-                "\"timestamp\": \"%(asctime)s\", "
-                "\"level\": \"%(levelname)s\", "
-                "\"logger\": \"%(name)s\", "
-                "\"message\": \"%(message)s\", "
-                "\"module\": \"%(module)s\", "
-                "\"function\": \"%(funcName)s\", "
-                "\"line\": %(lineno)d"
-                "}"
+      "format": "{\"timestamp\": \"%(asctime)s\", \"level\": \"%(levelname)s\", \"logger\": \"%(name)s\", \"message\": \"%(message)s\", \"module\": \"%(module)s\", \"function\": \"%(funcName)s\", \"line\": %(lineno)d}"
     },
     "simple": {
       "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
@@ -23,7 +15,7 @@
     "console": {
       "class": "logging.StreamHandler",
       "level": "INFO",
-      "formatter": "json",
+      "formatter": "simple",
       "stream": "ext://sys.stdout"
     }
   },

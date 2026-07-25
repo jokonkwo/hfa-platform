@@ -304,6 +304,36 @@ Returns one row: the most recent discovery date, how many ZIPs qualified, total 
 
 ---
 
+## As-of join decision (2026-07-24)
+
+The deployed `silver_sensor_corrected_10min` was originally built with an exact-date join against `bronze_panel_zipmap_daily`:
+
+```sql
+-- original (exact date match)
+CAST(reading.ts_utc AS DATE) = panel.date
+```
+
+The `bronze_panel_zipmap_daily` table is only updated when `discovery_panel.py` runs. The discovery job is not guaranteed to run every day — during the Oct–Nov 2025 window, it was run on Oct 8 and Oct 15, but not again in November. As a result, Nov 18 bronze readings had no matching panel entry and were silently dropped from silver (160 bronze rows → 80 silver rows).
+
+The git-committed model was changed to an as-of join:
+
+```sql
+-- corrected (as-of join: most recent panel on or before reading date, per sensor)
+JOIN bronze_panel_zipmap_daily p
+    ON  p.sensor_index = r.sensor_index
+    AND p.date <= cast(r.ts_utc as date)
+QUALIFY row_number() over (
+    partition by r.ts_utc, r.sensor_index
+    order by p.date desc
+) = 1
+```
+
+**Why this is correct:** Panel membership (which sensor covers which ZIP) changes slowly — typically only when discovery reruns. Using the most recent panel entry available for a given date is semantically accurate: a sensor's ZIP assignment on Nov 18 is the same as its assignment on Oct 15 unless discovery told us otherwise. The as-of join ensures no readings are dropped due to discovery job gaps.
+
+**What this is NOT:** A data integrity requirement. The panel assignment could theoretically be wrong for sensors that moved ZIPs between discovery runs, but at Fresno-county scale with fixed physical sensor locations, this does not occur in practice.
+
+---
+
 ## Gap analysis vs. current git repo
 
 | Deployed (MotherDuck) | Repo equivalent | Delta |

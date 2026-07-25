@@ -49,10 +49,13 @@ class PurpleAirClient:
             "temperature",
         ]
 
+        # PurpleAir /v1/sensors parameters:
+        #   show_only  — comma-separated sensor indices to restrict results to
+        #   location_type — 0=outdoor, 1=indoor (filter to outdoor only)
         params: dict[str, Any] = {
             "fields": ",".join(fields),
-            "show_only": "outdoor",
-            "sensor_index": ",".join(str(sid) for sid in sensor_ids),
+            "show_only": ",".join(str(sid) for sid in sensor_ids),
+            "location_type": 0,
         }
 
         url = f"{self.BASE_URL}/sensors"

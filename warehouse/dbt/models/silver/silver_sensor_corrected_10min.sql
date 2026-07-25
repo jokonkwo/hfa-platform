@@ -1,5 +1,8 @@
 {{ config(materialized='table') }}
 
+-- As-of join: for each bronze reading, use the most recent panel entry on or
+-- before the reading date. This handles readings on dates when the discovery
+-- job did not run (e.g. Nov 2025 readings against an Oct 2025 panel).
 with readings as (
     select
         ts_utc,
@@ -15,29 +18,38 @@ with readings as (
       and humidity_a is not null
 ),
 
-panel as (
+joined as (
     select
-        sensor_index,
-        zip,
-        town,
-        "date" as panel_date
-    from {{ source('bronze', 'bronze_panel_zipmap_daily') }}
+        r.ts_utc,
+        r.sensor_index,
+        r.last_seen,
+        r.pm25_cf1_a,
+        r.pm25_cf1_b,
+        r.humidity_a,
+        r.temperature_f,
+        p.zip,
+        p.town
+    from readings r
+    join {{ source('bronze', 'bronze_panel_zipmap_daily') }} p
+        on  p.sensor_index = r.sensor_index
+        and p.date <= cast(r.ts_utc as date)
+    qualify row_number() over (
+        partition by r.ts_utc, r.sensor_index
+        order by p.date desc
+    ) = 1
 )
 
 select
-    r.ts_utc,
-    r.sensor_index,
-    p.zip,
-    p.town,
-    {{ purpleair_pm25_correction('r.pm25_cf1_a', 'r.pm25_cf1_b', 'r.humidity_a', 'r.temperature_f') }} as pm25_corr,
+    ts_utc,
+    sensor_index,
+    zip,
+    town,
+    {{ purpleair_pm25_correction('pm25_cf1_a', 'pm25_cf1_b', 'humidity_a', 'temperature_f') }} as pm25_corr,
     case
-        when (r.pm25_cf1_a + r.pm25_cf1_b) / 2.0 < 0.5 then false
-        when abs(r.pm25_cf1_a - r.pm25_cf1_b)
-             / ((r.pm25_cf1_a + r.pm25_cf1_b) / 2.0) < 0.30 then true
+        when (pm25_cf1_a + pm25_cf1_b) / 2.0 < 0.5 then false
+        when abs(pm25_cf1_a - pm25_cf1_b)
+             / ((pm25_cf1_a + pm25_cf1_b) / 2.0) < 0.30 then true
         else false
     end as ab_agree,
-    (epoch(r.ts_utc) - epoch(r.last_seen)) / 60.0 as fresh_minutes
-from readings r
-inner join panel p
-    on  r.sensor_index = p.sensor_index
-    and cast(r.ts_utc as date) = p.panel_date
+    (epoch(ts_utc) - epoch(last_seen)) / 60.0 as fresh_minutes
+from joined

@@ -43,5 +43,13 @@ def connect(cfg: PipelineConfig) -> Any:
     if not cfg.motherduck_token:
         raise RuntimeError("MOTHERDUCK_TOKEN must be set for MotherDuck mode")
 
+    # Strip the mdt_ prefix the MotherDuck UI adds — duckdb.connect() requires raw JWT.
+    token = cfg.motherduck_token or ""
+    if token.startswith("mdt_"):
+        token = token[4:]
+
     logger.info("Connecting to MotherDuck", extra={"database": cfg.motherduck_database})
-    return duckdb.connect(f"md:{cfg.motherduck_database}")
+    return duckdb.connect(
+        f"md:{cfg.motherduck_database}",
+        config={"motherduck_token": token},
+    )
