@@ -1,95 +1,44 @@
 version: 2
 
 models:
-  - name: raw_purpleair_readings
-    description: "Stable wrapper over the RAW PurpleAir source table."
+  - name: silver_sensor_corrected_10min
+    description: "Per-sensor corrected PM2.5 with QC flags, joined to ZIP via panel map."
     columns:
-      - name: sensor_id
+      - name: ts_utc
         tests: [not_null]
-      - name: ts
+      - name: sensor_index
         tests: [not_null]
-      - name: ingested_at
+      - name: zip
+        tests: [not_null]
+      - name: pm25_corr
+        tests: [not_null]
+      - name: ab_agree
         tests: [not_null]
 
-  - name: silver_sensor_readings_10min
-    description: "10-minute bucketed, deduplicated, corrected PM2.5 with derived AQI per sensor."
+  - name: silver_zip_now_10min
+    description: "ZIP-level corrected PM2.5 rollup for every 10-min poll snapshot."
     columns:
-      - name: sensor_id
+      - name: ts_utc
         tests: [not_null]
-      - name: ts_10m
+      - name: zip
+        tests: [not_null]
+      - name: pm25_corr
         tests: [not_null]
       - name: aqi
         tests: [not_null]
-      - name: aqi_category
+      - name: qc_badge
         tests: [not_null]
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["sensor_id", "ts_10m"]
 
   - name: gold_zip_now
-    description: "Current (latest) ZIP-level AQI computed as average across sensors in a ZIP."
+    description: "API-ready current conditions per ZIP — one row per active ZIP, latest snapshot only."
     columns:
       - name: zip
-        tests: [not_null]
-      - name: ts_10m
+        tests: [not_null, unique]
+      - name: pm25
         tests: [not_null]
       - name: aqi
         tests: [not_null]
-      - name: aqi_category
+      - name: category
         tests: [not_null]
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["zip"]
-        
-  - name: gold_zip_hourly
-    description: "Hourly ZIP-level AQI computed as average across sensors in a ZIP."
-    columns:
-      - name: zip
+      - name: updated_ts
         tests: [not_null]
-      - name: hour_ts
-        tests: [not_null]
-      - name: aqi_avg
-        tests: [not_null]
-      - name: aqi_category
-        tests: [not_null]
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["zip", "hour_ts"]
-
-  - name: gold_zip_daily
-    description: "Daily ZIP-level AQI stats (avg/max) computed from 10-min readings."
-    columns:
-      - name: zip
-        tests: [not_null]
-      - name: date
-        tests: [not_null]
-      - name: aqi_avg
-        tests: [not_null]
-      - name: aqi_max
-        tests: [not_null]
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["zip", "date"]
-
-  - name: dim_sensors
-    description: "Sensor dimension with ZIP mapping derived via spatial join (sensor point within ZCTA polygon)."
-    columns:
-      - name: sensor_id
-        tests: [not_null]
-      - name: lat
-        tests: [not_null]
-      - name: lon
-        tests: [not_null]
-      - name: zip
-        tests: [not_null]
-
-  - name: dim_zip_county
-    description: "ZIP (ZCTA) to county mapping (CA only) derived via centroid-in-county spatial join."
-    columns:
-      - name: zip
-        tests: [not_null]
-      - name: county_name
-        tests: [not_null]
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: ["zip"]

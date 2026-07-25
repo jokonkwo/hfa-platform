@@ -1,50 +1,26 @@
-{{ config(materialized="table") }}
+{{ config(materialized='table') }}
 
--- v1 note:
--- This model assumes `zip` is populated in silver_sensor_readings_10min.
--- Until dim_sensors/zip mapping is implemented, this will produce 0 rows.
--- That's fine for now; it will "turn on" as soon as zip keys are present.
-
-with s as (
-  select
-    zip,
-    county_name,
-    ts_10m,
-    aqi,
-    sensor_id
-  from {{ ref('silver_sensor_readings_10min') }}
-  where zip is not null
-),
-
-latest_per_zip as (
-  select
-    zip,
-    max(ts_10m) as ts_10m
-  from s
-  group by 1
-),
-
-zip_now as (
-  select
-    s.zip,
-    s.county_name,
-    l.ts_10m,
-    -- ZIP-level AQI is the average across sensors in that zip at that ts bucket
-    cast(round(avg(s.aqi)) as integer) as aqi,
-    case
-      when cast(round(avg(s.aqi)) as integer) <= 50 then 'Good'
-      when cast(round(avg(s.aqi)) as integer) <= 100 then 'Moderate'
-      when cast(round(avg(s.aqi)) as integer) <= 150 then 'Unhealthy for Sensitive Groups'
-      when cast(round(avg(s.aqi)) as integer) <= 200 then 'Unhealthy'
-      when cast(round(avg(s.aqi)) as integer) <= 300 then 'Very Unhealthy'
-      else 'Hazardous'
-    end as aqi_category,
-    count(distinct s.sensor_id) as sensor_count,
-    current_timestamp as updated_at
-  from s
-  join latest_per_zip l
-    on s.zip = l.zip and s.ts_10m = l.ts_10m
-  group by 1,2,3
+with latest_ts as (
+    select max(ts_utc) as ts from {{ ref('silver_zip_now_10min') }}
 )
 
-select * from zip_now
+select
+    s.ts_utc at time zone 'UTC' as updated_ts,
+    s.zip,
+    s.town,
+    s.pm25_corr                 as pm25,
+    s.aqi,
+    case
+        when s.aqi <= 50  then 'Good'
+        when s.aqi <= 100 then 'Moderate'
+        when s.aqi <= 150 then 'Unhealthy for Sensitive Groups'
+        when s.aqi <= 200 then 'Unhealthy'
+        when s.aqi <= 300 then 'Very Unhealthy'
+        else 'Hazardous'
+    end                         as category,
+    s.sample_size,
+    s.freshness_pct,
+    s.qc_badge
+from {{ ref('silver_zip_now_10min') }} s
+cross join latest_ts
+where s.ts_utc = latest_ts.ts

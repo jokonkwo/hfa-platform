@@ -1,61 +1,46 @@
 version: 2
 
 sources:
-  - name: raw
-    description: "RAW layer sources ingested by pipelines (append-only)."
-    schema: raw
+  - name: bronze
+    description: "Bronze tables populated by Python ingestion pipelines — not managed by dbt."
+    schema: main
     tables:
-      - name: raw_purpleair_readings
-        description: "RAW PurpleAir readings (append-only)."
+      - name: bronze_sensor_now_raw_10min
+        description: "Raw PurpleAir 10-min poll results. One row per sensor per poll."
         columns:
-      - name: sensor_id
-        description: "PurpleAir sensor identifier."
-        tests:
-          - not_null
-      - name: ts
-        description: "Observation timestamp (UTC)."
-        tests:
-          - not_null
-      - name: ingested_at
-        description: "Pipeline ingestion timestamp (UTC)."
-        tests:
-          - not_null
-      - name: raw_sensors
-        description: "Pipeline-maintained sensor registry (sensor_id + lat/lon + activity). ZIP is derived via spatial join in dbt."
-        columns:
-          - name: sensor_id
+          - name: ts_utc
             tests: [not_null]
-          - name: lat
+          - name: sensor_index
             tests: [not_null]
-          - name: lon
+          - name: pm25_cf1_a
             tests: [not_null]
-          - name: updated_at
+          - name: pm25_cf1_b
+            tests: [not_null]
+          - name: humidity_a
             tests: [not_null]
 
-      # These sources may not exist until their ingestion pipelines are implemented.
-      # We define them now as part of the contract; dbt models can reference them when ready.
-
-      - name: raw_zip_boundaries
-        description: "ZIP polygon boundaries (GeoJSON/Shapefile ingested to DuckDB)."
+      - name: bronze_panel_zipmap_daily
+        description: "Daily panel of selected sensors with ZIP assignment."
         columns:
-          - name: zip
-            tests:
-              - not_null
-
-      - name: raw_demographics
-        description: "ZIP-level demographic attributes (optional v1)."
-        columns:
-          - name: zip
-            tests:
-              - not_null
-
-      - name: raw_sensors
-        description: "Pipeline-maintained sensor registry with static sensor->ZIP mapping."
-        columns:
-          - name: sensor_id
+          - name: sensor_index
             tests: [not_null]
           - name: zip
             tests: [not_null]
-          - name: updated_at
+          - name: date
             tests: [not_null]
 
+      - name: bronze_discovery_daily
+        description: "Daily discovery results — fresh-sensor counts per ZIP."
+        columns:
+          - name: date
+            tests: [not_null]
+          - name: zip
+            tests: [not_null]
+
+      - name: bronze_panel_show_only_daily
+        description: "Sensor IDs in the active panel (no ZIP attribution)."
+        columns:
+          - name: date
+            tests: [not_null]
+          - name: sensor_index
+            tests: [not_null]

@@ -15,23 +15,13 @@ target-path: "target"
 clean-targets:
   - "target"
   - "dbt_packages"
-  
-on-run-start:
-  - "INSTALL spatial;"
-  - "LOAD spatial;"
 
 models:
   hfa_warehouse:
     +materialized: view
-    raw:
-      +schema: raw
-      +materialized: view
     silver:
-      +schema: silver
       +materialized: table
     gold:
-      +schema: gold
       +materialized: table
-    ops:
-      +schema: ops
-      +materialized: table
+    api:
+      +materialized: view
