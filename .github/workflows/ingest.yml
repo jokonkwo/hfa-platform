@@ -1,0 +1,58 @@
+# PurpleAir ingestion — runs every 10 minutes.
+#
+# IMPORTANT: GitHub Actions `on.schedule` is best-effort and can lag 5–30+ minutes,
+# making it unsuitable as the sole trigger for a 10-minute freshness target.
+#
+# PRIMARY TRIGGER: workflow_dispatch, called by an external scheduler every 10 minutes.
+# FALLBACK TRIGGER: on.schedule kept as a backup if the external scheduler goes down.
+#
+# External scheduler setup (one-time, manual):
+#   See docs/scheduling.md for the full setup guide.
+#   Short version: configure cron-job.org (or equivalent) to POST to
+#   https://api.github.com/repos/jokonkwo/hfa-platform/actions/workflows/ingest.yml/dispatches
+#   every 10 minutes with a GitHub token that has the `workflow` scope.
+
+name: Ingest PurpleAir
+
+on:
+  schedule:
+    # Fallback only — GitHub may delay this by 5–30+ min. See header note above.
+    - cron: "*/10 * * * *"
+
+  workflow_dispatch:
+    # Primary trigger — called by external scheduler via GitHub API.
+    # No inputs required; all config comes from repository secrets.
+
+jobs:
+  load-raw:
+    name: Load raw PurpleAir readings
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      HFA_ENV: staging
+      HFA_WAREHOUSE_MODE: motherduck
+      MOTHERDUCK_DATABASE: hfa_dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ingestion
+        env:
+          MOTHERDUCK_TOKEN: ${{ secrets.MOTHERDUCK_TOKEN }}
+          PURPLEAIR_API_KEY: ${{ secrets.PURPLEAIR_API_KEY }}
+          PURPLEAIR_SENSOR_IDS: ${{ secrets.PURPLEAIR_SENSOR_IDS }}
+        run: |
+          python -m pipelines.ingestion.purpleair.cli load-raw

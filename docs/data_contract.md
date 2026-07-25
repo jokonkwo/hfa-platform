@@ -241,9 +241,22 @@ Single object. Returns 404 if no discovery data available for today.
 
 ## Freshness & Operational Guarantees
 
-- PurpleAir ingestion scheduled every **10 minutes**
-- Freshness breach alert: if newest reading is older than **30 minutes** (configurable via `DATA_FRESHNESS_BREACH_MINUTES`)
-- GitHub Actions scheduling has a known best-effort delay of 5–30+ min (see CLAUDE.md §2)
+**Ingestion cadence:** PurpleAir readings are ingested every 10 minutes via
+`.github/workflows/ingest.yml`, triggered by an external scheduler (cron-job.org)
+calling the GitHub `workflow_dispatch` API. See `docs/scheduling.md` for setup.
+
+**Expected freshness:** With `workflow_dispatch` as the primary trigger, typical
+end-to-end latency is 1–2 minutes. A reading gap exceeding **20 minutes** indicates
+a scheduler or pipeline failure.
+
+**Breach alert threshold:** `DATA_FRESHNESS_BREACH_MINUTES=30` — alert if the newest
+reading in `bronze_sensor_now_raw_10min` is older than 30 minutes. This threshold is
+intentionally above the 20-minute failure signal to absorb transient delays without
+false-positive alerts.
+
+**Fallback:** `on.schedule` (`*/10 * * * *`) remains in the workflow as a backup if the
+external scheduler is down. GitHub may delay this trigger by 5–30+ minutes, so it is
+not relied on for the freshness target — only for gap prevention.
 
 ---
 
