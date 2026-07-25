@@ -10,10 +10,8 @@ hfa_warehouse:
 
     # MotherDuck (active dev target: HFA_DEV)
     #
-    # MOTHERDUCK_TOKEN is stored as mdt_<jwt> (the format shown in the MotherDuck UI).
-    # The [4:] slice strips the mdt_ prefix — DuckDB's connect() config requires the
-    # raw JWT. The token is passed via plugins.config (not settings) so it reaches
-    # duckdb.connect() as a config kwarg rather than via SET, which is initialization-only.
+    # Strip mdt_ prefix if present — duckdb.connect() requires the raw JWT.
+    # Handles tokens stored with or without the prefix.
     motherduck:
       type: duckdb
       path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'hfa_dev') }}"
@@ -21,4 +19,4 @@ hfa_warehouse:
       plugins:
         - module: motherduck
           config:
-            motherduck_token: "{{ env_var('MOTHERDUCK_TOKEN')[4:] }}"
+            motherduck_token: "{{ env_var('MOTHERDUCK_TOKEN')[4:] if env_var('MOTHERDUCK_TOKEN').startswith('mdt_') else env_var('MOTHERDUCK_TOKEN') }}"
