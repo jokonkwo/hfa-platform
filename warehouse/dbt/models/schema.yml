@@ -29,6 +29,26 @@ models:
       - name: qc_badge
         tests: [not_null]
 
+  - name: silver_zip_hourly
+    description: "Hourly ZIP-level PM2.5 rollup aggregated from 10-min corrected readings."
+    columns:
+      - name: hour_utc
+        tests: [not_null]
+      - name: zip
+        tests: [not_null]
+      - name: pm25_corr
+        tests: [not_null]
+
+  - name: silver_zip_daily
+    description: "Daily ZIP-level PM2.5 stats (mean, p95, max) and AQI exceedance counts."
+    columns:
+      - name: date
+        tests: [not_null]
+      - name: zip
+        tests: [not_null]
+      - name: pm25_mean
+        tests: [not_null]
+
   - name: gold_zip_now
     description: "API-ready current conditions per ZIP — one row per active ZIP, latest snapshot only."
     columns:
