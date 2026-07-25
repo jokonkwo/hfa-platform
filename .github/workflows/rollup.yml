@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install dbt-duckdb
+          pip install "dbt-duckdb" "duckdb==1.5.4"
 
       - name: Run rollup models
         env:

@@ -4,7 +4,7 @@ uvicorn[standard]>=0.27
 pydantic>=2.6
 
 # Warehouse
-duckdb>=0.10
+duckdb==1.5.4
 
 # Pipelines / HTTP
 requests>=2.31
