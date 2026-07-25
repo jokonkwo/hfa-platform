@@ -8,15 +8,15 @@ hfa_warehouse:
       path: "{{ env_var('HFA_DUCKDB_PATH', './data/local/hfa.duckdb') }}"
       threads: 4
 
-    # Optional: MotherDuck (prod)
+    # MotherDuck (active dev target: HFA_DEV)
     #
-    # This uses DuckDB's MotherDuck DSN format:
-    #   md:<database_name>
-    #
-    # Assumption: dbt-duckdb passes the `path` through to DuckDB connect().
-    # If your dbt-duckdb version behaves differently, we will adjust after the
-    # first `dbt debug` attempt.
+    # MOTHERDUCK_TOKEN is stored as mdt_<jwt> (the format shown in the MotherDuck UI).
+    # DuckDB's local MotherDuck extension requires the raw JWT without the mdt_ prefix;
+    # the [4:] slice strips it. If your token doesn't start with mdt_ (e.g. already raw),
+    # remove the [4:].
     motherduck:
       type: duckdb
-      path: "md:{{ env_var('MOTHERDUCK_DATABASE') }}"
+      path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'hfa_dev') }}"
       threads: 4
+      settings:
+        motherduck_token: "{{ env_var('MOTHERDUCK_TOKEN')[4:] }}"

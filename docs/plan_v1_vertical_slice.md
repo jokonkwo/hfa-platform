@@ -4,6 +4,14 @@
 
 **Goal:** get the existing deployed pipeline fully committed, fix the correction formula to EPA/Barkjohn (adding `temperature_f`), populate the empty rollup tables (`silver_zip_hourly`, `silver_zip_daily`), and wire the `api_*` views to real FastAPI endpoints. The map proof follows from that.
 
+### Database environment clarification (2026-07-24)
+
+All v1 development **directly targets `HFA_DEV`**. There is no separate staging database.
+
+- **HFAP_DEV** — abandoned. Was briefly referenced as a development target but was never set up, has no working token, and is empty. Any prior instruction to "run against HFAP_DEV instead of HFA_DEV" is obsolete.
+- **HFA_PROD** — created 2026-07-24 as an empty future-production placeholder. Nothing targets it yet. Do not use it until the POC is validated.
+- **Named snapshot (pre_dbt_rebuild) — not created.** MotherDuck named snapshots require the Business plan; the account is on Lite. The bronze source data in HFA_DEV serves as the rollback point — silver/gold can be regenerated from it via `dbt run`.
+
 ---
 
 ## Step 1 — Confirm HFA_DEV still has live-ish data and the pipeline can run

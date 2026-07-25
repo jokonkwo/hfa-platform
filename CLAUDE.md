@@ -66,6 +66,18 @@ The deployed formula may be used as a temporary fallback while `temperature_f` d
 
 ## 4. Honest current-state inventory (update this section as things change — do not let it go stale)
 
+### MotherDuck database environments
+
+| Database | Status | Purpose |
+|---|---|---|
+| **HFA_DEV** | Active — all v1 development targets this | Contains Oct–Nov 2025 deployed data (160 bronze rows, silver/gold tables, api_* views). This is the real dev database. |
+| **HFA_PROD** | Empty placeholder, not yet used | Created 2026-07-24 as future production target. Nothing writes to it. Don't touch it until the POC is validated. |
+| **HFAP_DEV** | Abandoned — never set up | Was briefly named as a placeholder target but has no working token and is empty. All references to HFAP_DEV in prior docs/plans are obsolete. |
+
+**Named snapshots are not available on the MotherDuck Lite plan** (Business plan required). The `CREATE SNAPSHOT pre_dbt_rebuild OF HFA_DEV` command was attempted and failed. The bronze source data in HFA_DEV is the rollback point — silver/gold can be regenerated from it via dbt.
+
+**`.env` / `profiles.yml` connection:** `MOTHERDUCK_TOKEN` is stored with the `mdt_` prefix as shown in the MotherDuck UI. `profiles.yml` strips the prefix automatically via `[4:]` slice on the token value. Local Python scripts that connect directly must strip it themselves (see `pipelines/common/db.py`).
+
 ### Deployed and working in HFA_DEV (MotherDuck) — but not committed to git
 
 A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the flat bronze/silver/gold/api_* naming scheme. The code that built these tables was **never committed**. See `docs/deployed_schema_audit.md` for schemas, row counts, view definitions, and sample data.
