@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 # Ensure the API package is importable in a monorepo layout:
 # apps/api/src/hfa_api/...
-API_SRC = Path(__file__).resolve().parents[2] / "src"
+API_SRC = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(API_SRC))
 
 

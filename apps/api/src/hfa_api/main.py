@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from hfa_api.logging_setup import setup_logging, get_logger
 from hfa_api.settings import get_settings
 from hfa_api.routes.health import router as health_router
+from hfa_api.routes.zips import router as zips_router
+from hfa_api.routes.coverage import router as coverage_router
 
 logger = get_logger(__name__)
 
@@ -34,6 +36,8 @@ def create_app() -> FastAPI:
 
     # Routers
     app.include_router(health_router, prefix="/health", tags=["health"])
+    app.include_router(zips_router, prefix="/v1/zips", tags=["zips"])
+    app.include_router(coverage_router, prefix="/v1/coverage", tags=["coverage"])
 
     return app
 

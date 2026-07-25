@@ -78,12 +78,17 @@ def connect_readonly() -> Any:
         extra={"database": settings.motherduck_database},
     )
 
-    # MotherDuck connection uses DuckDB with an md: DSN.
-    # The token is read from MOTHERDUCK_TOKEN env var by the client.
-    return duckdb.connect(f"md:{settings.motherduck_database}")
+    # Strip the mdt_ prefix the MotherDuck UI adds — duckdb.connect() requires the raw JWT.
+    token = settings.motherduck_token or ""
+    if token.startswith("mdt_"):
+        token = token[4:]
+    return duckdb.connect(
+        f"md:{settings.motherduck_database}",
+        config={"motherduck_token": token},
+    )
 
 
-def query_df(sql: str, params: Optional[dict[str, Any]] = None) -> Any:
+def query_df(sql: str, params: Optional[list[Any]] = None) -> Any:
     """
     Convenience helper: run a query and return a dataframe-like object.
 
