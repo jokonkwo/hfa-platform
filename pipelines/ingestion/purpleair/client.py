@@ -11,25 +11,17 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class PurpleAirReading:
-    sensor_id: int
-    ts: int  # unix seconds
-    pm2_5: float | None
+    sensor_index: int
+    ts_utc: int       # unix seconds (poll wall-clock time)
+    last_seen: int    # unix seconds (sensor's last transmission time)
+    pm25_cf1_a: float | None
+    pm25_cf1_b: float | None
+    humidity_a: float | None
     temperature_f: float | None
-    humidity: float | None
-    pressure: float | None
-    lat: float | None
-    lon: float | None
 
 
 class PurpleAirClient:
-    """
-    Minimal PurpleAir client for v1.
-
-    Notes:
-    - PurpleAir has multiple endpoints and field options.
-    - We keep this client narrow: fetch outdoor/public sensor readings.
-    - We store RAW "as received" and let dbt handle standardization/corrections.
-    """
+    """Minimal PurpleAir client — fetches outdoor/public sensor readings."""
 
     BASE_URL = "https://api.purpleair.com/v1"
 
@@ -42,36 +34,24 @@ class PurpleAirClient:
         return {"X-API-Key": self.api_key}
 
     def fetch_sensors(self, sensor_ids: list[int] | None = None) -> dict[str, Any]:
-        """
-        Fetch sensor data.
-
-        If sensor_ids provided, we request only those sensors.
-        Otherwise, caller must define a search strategy (future).
-
-        Returns the raw PurpleAir JSON payload.
-        """
         if not sensor_ids:
             raise ValueError(
                 "sensor_ids must be provided for v1 ingestion. "
                 "We will add search-by-region later."
             )
 
-        # PurpleAir supports a "sensors" endpoint with fields selection.
-        # We request only the fields we need for RAW contract.
         fields = [
             "sensor_index",
             "last_seen",
-            "pm2.5",
-            "temperature",
+            "pm2.5_cf_1_a",
+            "pm2.5_cf_1_b",
             "humidity",
-            "pressure",
-            "latitude",
-            "longitude",
+            "temperature",
         ]
 
         params: dict[str, Any] = {
             "fields": ",".join(fields),
-            "show_only": "outdoor",  # focus on outdoor sensors where possible
+            "show_only": "outdoor",
             "sensor_index": ",".join(str(sid) for sid in sensor_ids),
         }
 
@@ -79,9 +59,13 @@ class PurpleAirClient:
         logger.info("Fetching PurpleAir sensors", extra={"count": len(sensor_ids)})
         return get_json(url, headers=self._headers(), params=params)
 
-    def parse_readings(self, payload: dict[str, Any]) -> list[PurpleAirReading]:
+    def parse_readings(
+        self, payload: dict[str, Any], poll_ts: int
+    ) -> list[PurpleAirReading]:
         """
-        Convert PurpleAir payload into a normalized list of readings.
+        Convert PurpleAir API payload into normalized readings.
+
+        poll_ts: unix seconds for the wall-clock time this poll ran (ts_utc).
         """
         data = payload.get("data")
         fields = payload.get("fields")
@@ -89,36 +73,32 @@ class PurpleAirClient:
         if not isinstance(data, list) or not isinstance(fields, list):
             raise RuntimeError("Unexpected PurpleAir response shape: missing data/fields")
 
-        # Map field name -> index in each data row
         idx = {name: i for i, name in enumerate(fields)}
 
         def _get(row: list[Any], key: str) -> Any:
             i = idx.get(key)
-            if i is None:
-                return None
-            return row[i]
+            return row[i] if i is not None else None
 
         readings: list[PurpleAirReading] = []
         for row in data:
             if not isinstance(row, list):
                 continue
 
-            sensor_id = _get(row, "sensor_index")
+            sensor_index = _get(row, "sensor_index")
             last_seen = _get(row, "last_seen")
 
-            if sensor_id is None or last_seen is None:
+            if sensor_index is None or last_seen is None:
                 continue
 
             readings.append(
                 PurpleAirReading(
-                    sensor_id=int(sensor_id),
-                    ts=int(last_seen),
-                    pm2_5=_safe_float(_get(row, "pm2.5")),
+                    sensor_index=int(sensor_index),
+                    ts_utc=poll_ts,
+                    last_seen=int(last_seen),
+                    pm25_cf1_a=_safe_float(_get(row, "pm2.5_cf_1_a")),
+                    pm25_cf1_b=_safe_float(_get(row, "pm2.5_cf_1_b")),
+                    humidity_a=_safe_float(_get(row, "humidity")),
                     temperature_f=_safe_float(_get(row, "temperature")),
-                    humidity=_safe_float(_get(row, "humidity")),
-                    pressure=_safe_float(_get(row, "pressure")),
-                    lat=_safe_float(_get(row, "latitude")),
-                    lon=_safe_float(_get(row, "longitude")),
                 )
             )
 
