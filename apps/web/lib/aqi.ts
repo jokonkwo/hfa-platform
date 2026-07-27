@@ -1,15 +1,16 @@
-// EPA AQI category colors. Keyed by the `category` string from the API.
+// AQI category colors — pastel palette chosen for readability on Voyager basemap.
+// Hazardous is intentionally less pastel than the others so severity still reads.
 export const AQI_CATEGORIES = [
-  { name: "Good", range: "0–50", color: "#00e400" },
-  { name: "Moderate", range: "51–100", color: "#ffff00" },
+  { name: "Good", range: "0–50", color: "#8FE3A8" },
+  { name: "Moderate", range: "51–100", color: "#FCE083" },
   {
     name: "Unhealthy for Sensitive Groups",
     range: "101–150",
-    color: "#ff7e00",
+    color: "#F5B375",
   },
-  { name: "Unhealthy", range: "151–200", color: "#ff0000" },
-  { name: "Very Unhealthy", range: "201–300", color: "#8f3f97" },
-  { name: "Hazardous", range: "301+", color: "#7e0023" },
+  { name: "Unhealthy", range: "151–200", color: "#EF8C8C" },
+  { name: "Very Unhealthy", range: "201–300", color: "#B994D1" },
+  { name: "Hazardous", range: "301+", color: "#8B4B5C" },
 ] as const;
 
 const CATEGORY_COLOR: Record<string, string> = AQI_CATEGORIES.reduce(
@@ -20,18 +21,17 @@ const CATEGORY_COLOR: Record<string, string> = AQI_CATEGORIES.reduce(
   {} as Record<string, string>,
 );
 
-const DEFAULT_COLOR = "#00e400"; // green fallback for unrecognized category
+const DEFAULT_COLOR = "#8FE3A8"; // Good-green fallback for unrecognized category
 
-// Map an API `category` string to its EPA color. Defaults to green.
+// Map an API `category` string to its pastel color. Defaults to Good green.
 export function categoryColor(category: string | null | undefined): string {
   if (!category) return DEFAULT_COLOR;
   return CATEGORY_COLOR[category.toLowerCase()] ?? DEFAULT_COLOR;
 }
 
 // Text color that reads well on top of the given category swatch.
+// Hazardous (#8B4B5C) is dark enough to need white; all other pastels use dark text.
 export function categoryTextColor(category: string | null | undefined): string {
   const c = categoryColor(category);
-  // Yellow / green / orange -> dark text; red / purple / maroon -> light text
-  if (c === "#ffff00" || c === "#00e400" || c === "#ff7e00") return "#1a1a1a";
-  return "#ffffff";
+  return c === "#8B4B5C" ? "#ffffff" : "#1a1a1a";
 }
