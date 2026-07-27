@@ -157,6 +157,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         data: buildBoundaryGeoJSON(bounds, dataRef.current),
         generateId: true,
       });
+      // Signal for test automation: boundaries are added to the map.
+      type BoundaryWindow = Window & typeof globalThis & { __hfaBoundariesLoaded?: boolean };
+      (window as BoundaryWindow).__hfaBoundariesLoaded = true;
       map.addLayer(
         {
           id: BOUNDARY_FILL_ID,
