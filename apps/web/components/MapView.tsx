@@ -130,7 +130,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       const map = mapRef.current;
       if (!centroid || !map) return;
       const [lat, lon] = centroid;
-      map.flyTo({ center: [lon, lat], zoom: 12, duration: 900 });
+      map.flyTo({ center: [lon, lat], zoom: 12, duration: 450 });
     },
   }));
 
@@ -334,10 +334,15 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
       map.on("load", () => {
         // Expose to test automation — 'load' fires reliably even in headless environments.
-        (window as Window & typeof globalThis & { __hfaMapLoaded?: boolean }).__hfaMapLoaded = true;
-        // Project lng/lat to canvas pixel for hover simulation in tests.
-        type ProjWindow = Window & typeof globalThis & { __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number } };
-        (window as ProjWindow).__hfaProjectLngLat = (lng, lat) => map.project([lng, lat]);
+        type TestWindow = Window & typeof globalThis & {
+          __hfaMapLoaded?: boolean;
+          __hfaMap?: maplibregl.Map;
+          __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number };
+        };
+        const tw = window as TestWindow;
+        tw.__hfaMapLoaded = true;
+        tw.__hfaMap = map;
+        tw.__hfaProjectLngLat = (lng, lat) => map.project([lng, lat]);
         map.addSource(SOURCE_ID, {
           type: "geojson",
           data: buildPointGeoJSON(dataRef.current),
@@ -404,8 +409,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       ro?.disconnect();
       tooltipRef.current?.remove();
       tooltipRef.current = null;
-      type ProjWindow = Window & typeof globalThis & { __hfaProjectLngLat?: unknown };
-      (window as ProjWindow).__hfaProjectLngLat = undefined;
+      type CleanWindow = Window & typeof globalThis & { __hfaProjectLngLat?: unknown; __hfaMap?: unknown };
+      (window as CleanWindow).__hfaProjectLngLat = undefined;
+      (window as CleanWindow).__hfaMap = undefined;
       popupRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
