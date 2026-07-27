@@ -22,6 +22,10 @@ import {
 const CARTO_POSITRON_STYLE =
   "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 
+// MapLibre v6 derives its worker URL from the absolute bundle path, which
+// Next.js cannot serve. Point it at the copy we placed in public/ instead.
+maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
+
 const SOURCE_ID = "zips";
 const LAYER_ID = "zip-circles";
 const BOUNDARY_SOURCE_ID = "zip-boundaries";
