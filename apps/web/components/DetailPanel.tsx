@@ -16,8 +16,10 @@ function QcIndicator({ badge }: { badge: string }) {
   const map: Record<string, { color: string; label: string }> = {
     ok: { color: "bg-green-500", label: "Good quality" },
     good: { color: "bg-green-500", label: "Good quality" },
+    verified: { color: "bg-green-500", label: "Verified" },
     warning: { color: "bg-amber-500", label: "Warning" },
     warn: { color: "bg-amber-500", label: "Warning" },
+    poor: { color: "bg-red-400", label: "Poor quality" },
     stale: { color: "bg-gray-400", label: "Stale" },
     error: { color: "bg-red-500", label: "Error" },
   };
