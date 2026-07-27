@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import datetime
+import json
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from hfa_api.db.connection import query_df
 from hfa_api.logging_setup import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+# Resolved relative to this file: apps/api/src/hfa_api/routes/ (4 levels up = apps/api/)
+_BOUNDARIES_FILE = (
+    Path(__file__).parent.parent.parent.parent / "data" / "fresno_zip_boundaries.geojson"
+)
 
 
 def _to_records(df: Any) -> list[dict]:
@@ -19,6 +27,15 @@ def _to_records(df: Any) -> list[dict]:
             if isinstance(v, (datetime.datetime, datetime.date)):
                 rec[k] = v.isoformat()
     return records
+
+
+@router.get("/boundaries", summary="ZIP boundary polygons as GeoJSON FeatureCollection")
+def get_zip_boundaries() -> JSONResponse:
+    if not _BOUNDARIES_FILE.exists():
+        raise HTTPException(status_code=503, detail="Boundary data not available")
+    with open(_BOUNDARIES_FILE) as f:
+        data = json.load(f)
+    return JSONResponse(content=data, media_type="application/geo+json")
 
 
 @router.get("/now", summary="Current conditions for all ZIPs")

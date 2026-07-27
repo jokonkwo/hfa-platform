@@ -112,6 +112,7 @@ Aggregates `silver_sensor_corrected_10min` into ZIP-level rollup.
 | `sample_size` | BIGINT |
 | `freshness_pct` | DOUBLE |
 | `qc_badge` | VARCHAR |
+| `max_last_seen` | TIMESTAMP | MAX(last_seen) across contributing sensors — propagated to gold as updated_ts |
 
 ### `silver_zip_hourly`
 **Grain:** (zip, hour_utc)
@@ -158,13 +159,32 @@ Aggregates `silver_sensor_corrected_10min` into ZIP-level rollup.
 | `sample_size` | BIGINT | |
 | `freshness_pct` | DOUBLE | |
 | `qc_badge` | VARCHAR | |
-| `updated_ts` | TIMESTAMPTZ | ts_utc AT TIME ZONE 'UTC' |
+| `updated_ts` | TIMESTAMPTZ | MAX(last_seen) AT TIME ZONE 'UTC' — the most recent sensor transmission timestamp across all contributing sensors for this ZIP. Reflects true data age, not poll time. A stale sensor will show its actual last-seen time even if the pipeline polled more recently. |
 
 ---
 
 ## API Views (response shapes)
 
 These views are the authoritative API contract. Endpoints must serve exactly these shapes.
+
+### `GET /v1/zips/boundaries` — ZIP boundary polygons
+
+Returns a GeoJSON `FeatureCollection` of Fresno County ZCTA polygon geometries sourced from Census TIGER 2025. Served as a static file from `apps/api/data/fresno_zip_boundaries.geojson` (refreshed by re-running the Census TIGER fetch; no MotherDuck dependency). Each feature has a single property: `ZCTA5` (5-digit ZIP string). The frontend joins this against `/v1/zips/now` client-side to color each polygon by AQI category.
+
+**Note:** PMTiles (Cloudflare R2 + Tippecanoe) remains the target if coverage expands beyond Fresno County. Direct GeoJSON is appropriate at this scale (~18 polygons, 275KB).
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "ZCTA5": "93727" },
+      "geometry": { "type": "Polygon", "coordinates": [...] }
+    }
+  ]
+}
+```
 
 ### `api_zip_now` → `GET /v1/zips/now` and `GET /v1/zips/{zip}/now`
 

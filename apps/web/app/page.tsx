@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { MapViewHandle } from "@/components/MapView";
+import type { MapViewHandle, BoundaryCollection } from "@/components/MapView";
 import { Sidebar } from "@/components/Sidebar";
 import { DetailPanel } from "@/components/DetailPanel";
 import { FilterPanel, DEFAULT_RANGE, type AqiRange } from "@/components/FilterPanel";
 import { AboutPanel } from "@/components/AboutPanel";
-import { fetchZipsNow, ApiError } from "@/lib/api";
+import { fetchZipsNow, fetchZipBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow } from "@/lib/types";
 
 // MapLibre touches window/document — must be client-only.
@@ -26,6 +26,7 @@ export default function Home() {
   const [rows, setRows] = useState<ZipNow[]>([]);
   const [state, setState] = useState<LoadState>("loading");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [boundaries, setBoundaries] = useState<BoundaryCollection | null>(null);
 
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
   const [range, setRange] = useState<AqiRange>(DEFAULT_RANGE);
@@ -36,7 +37,6 @@ export default function Home() {
   const mapRef = useRef<MapViewHandle | null>(null);
 
   useEffect(() => {
-    // Initial state is already "loading"; the effect runs once on mount.
     const ctrl = new AbortController();
     fetchZipsNow(ctrl.signal)
       .then((data) => {
@@ -52,6 +52,10 @@ export default function Home() {
         );
         setState("error");
       });
+    // Boundaries are non-critical; fetch in parallel, silently ignore failures.
+    fetchZipBoundaries().then((b) => {
+      if (b) setBoundaries(b);
+    });
     return () => ctrl.abort();
   }, []);
 
@@ -139,7 +143,7 @@ export default function Home() {
 
         {/* Map area */}
         <main className="relative flex-1">
-          <MapView ref={mapRef} data={filtered} onSelectZip={handleSelectZip} />
+          <MapView ref={mapRef} data={filtered} boundaries={boundaries} onSelectZip={handleSelectZip} />
 
           {/* Loading overlay */}
           {state === "loading" && (

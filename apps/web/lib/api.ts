@@ -1,4 +1,5 @@
 import type { ZipNow } from "./types";
+import type { BoundaryCollection } from "@/components/MapView";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -31,4 +32,17 @@ export async function fetchZipsNow(signal?: AbortSignal): Promise<ZipNow[]> {
   const data = (await res.json()) as unknown;
   if (!Array.isArray(data)) return [];
   return data as ZipNow[];
+}
+
+// Fetch ZIP boundary polygons. Returns null on any failure (boundaries are non-critical).
+export async function fetchZipBoundaries(): Promise<BoundaryCollection | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries`, {
+      cache: "force-cache", // boundaries are static; cache aggressively
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BoundaryCollection;
+  } catch {
+    return null;
+  }
 }
