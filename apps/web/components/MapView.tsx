@@ -19,13 +19,12 @@ import {
   FRESNO_ZOOM,
 } from "@/lib/zipCentroids";
 
-const CARTO_POSITRON_STYLE =
-  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const CARTO_VOYAGER_STYLE =
+  "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
 // MapLibre v6 derives its worker URL from the absolute bundle path, which
 // Next.js cannot serve. Point it at the copy we placed in public/ instead.
 maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
-console.log("[HFA-DIAG 4] setWorkerUrl called. workerUrl is now:", maplibregl.getWorkerUrl());
 
 const SOURCE_ID = "zips";
 const LAYER_ID = "zip-circles";
@@ -246,18 +245,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const rafId = requestAnimationFrame(() => {
       if (isDestroyed || mapRef.current) return;
 
-      const rect = container.getBoundingClientRect();
-      console.log("[HFA-DIAG 2] container dims at Map init:", {
-        width: rect.width,
-        height: rect.height,
-        offsetWidth: container.offsetWidth,
-        offsetHeight: container.offsetHeight,
-      });
-      console.log("[HFA-DIAG 4] constructing Map. workerUrl:", maplibregl.getWorkerUrl());
-
       const map = new maplibregl.Map({
         container,
-        style: CARTO_POSITRON_STYLE,
+        style: CARTO_VOYAGER_STYLE,
         center: FRESNO_CENTER,
         zoom: FRESNO_ZOOM,
         attributionControl: { compact: true },
@@ -273,16 +263,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       ro = new ResizeObserver(() => { mapRef.current?.resize(); });
       ro.observe(container);
 
-      map.on("error", (e) => console.error("[HFA-DIAG 3] map error event:", e.error));
-      map.on("styleimagemissing", (e) => console.warn("[HFA-DIAG 3] styleimagemissing:", e.id));
-      map.once("style.load", () => console.log("[HFA-DIAG 4] style.load fired"));
-      map.once("idle", () => {
-        console.log("[HFA-DIAG 4] map idle (fully rendered)");
-        (window as Window & typeof globalThis & { __hfaMapIdle?: boolean }).__hfaMapIdle = true;
-      });
-
       map.on("load", () => {
-        console.log("[HFA-DIAG 4] map 'load' event fired — adding sources/layers");
         // Expose to test automation — 'load' fires reliably even in headless environments.
         (window as Window & typeof globalThis & { __hfaMapLoaded?: boolean }).__hfaMapLoaded = true;
         map.addSource(SOURCE_ID, {
