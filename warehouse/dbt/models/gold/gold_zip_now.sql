@@ -21,10 +21,13 @@ latest_ts as (
 )
 
 select
-    s.ts_utc at time zone 'UTC' as updated_ts,
+    -- Use max_last_seen (real sensor transmission time) as updated_ts, not ts_utc
+    -- (poll time). This shows true data age: a stale sensor won't appear fresh just
+    -- because the pipeline polled recently.
+    s.max_last_seen at time zone 'UTC' as updated_ts,
     s.zip,
     s.town,
-    s.pm25_corr                 as pm25,
+    s.pm25_corr                        as pm25,
     s.aqi,
     case
         when s.aqi <= 50  then 'Good'
@@ -33,7 +36,7 @@ select
         when s.aqi <= 200 then 'Unhealthy'
         when s.aqi <= 300 then 'Very Unhealthy'
         else 'Hazardous'
-    end                         as category,
+    end                                as category,
     s.sample_size,
     s.freshness_pct,
     s.qc_badge

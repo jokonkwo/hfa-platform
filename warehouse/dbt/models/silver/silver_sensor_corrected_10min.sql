@@ -53,6 +53,7 @@ select
     sensor_index,
     zip,
     town,
+    last_seen,
     {{ purpleair_pm25_correction('pm25_cf1_a', 'pm25_cf1_b', 'humidity_a', 'temperature_f') }} as pm25_corr,
     case
         when (pm25_cf1_a + pm25_cf1_b) / 2.0 < 0.5 then false

@@ -15,7 +15,10 @@ with zip_agg as (
         count(*)                                                           as sample_size,
         100.0 * sum(case when fresh_minutes <= 30 then 1 else 0 end)
               / count(*)                                                   as freshness_pct,
-        sum(case when not ab_agree then 1 else 0 end)                     as disagree_count
+        sum(case when not ab_agree then 1 else 0 end)                     as disagree_count,
+        -- Sensor last-seen time: latest actual transmission across all sensors in this ZIP/poll.
+        -- Used downstream as updated_ts so users see real data age, not poll time.
+        max(last_seen)                                                     as max_last_seen
     from {{ ref('silver_sensor_corrected_10min') }}
     {% if is_incremental() %}
     where ts_utc > (select max(ts_utc) from {{ this }})
@@ -35,5 +38,6 @@ select
         when freshness_pct >= 80 and disagree_count = 0 then 'good'
         when freshness_pct >= 40                        then 'warning'
         else 'poor'
-    end as qc_badge
+    end as qc_badge,
+    max_last_seen
 from zip_agg
