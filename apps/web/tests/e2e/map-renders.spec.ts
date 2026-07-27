@@ -234,6 +234,56 @@ test.describe("AQI color palette", () => {
   });
 });
 
+// ─── label visibility at default zoom ───────────────────────────────────────
+// Catches "wrong default zoom" regression: neighborhood labels (place_hamlet /
+// place_suburbs) only appear at zoom ≥ 12 in CARTO Voyager. If FRESNO_ZOOM
+// regresses to 10, this test fails because those layers are outside their
+// minzoom range at the initial camera position.
+
+test.describe("Label visibility", () => {
+  test("neighborhood label layers active at default zoom (≥12)", async ({ page }) => {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForMapLoad(page);
+    // No extra delay needed — we're reading style layer metadata, not waiting for tiles.
+
+    const result = await page.evaluate(() => {
+      const map = (window as W & { __hfaMap?: { getZoom(): number; getStyle(): { layers: { id: string; minzoom?: number; maxzoom?: number; type: string }[] } } }).__hfaMap;
+      if (!map) return { error: "no map" };
+      const zoom = map.getZoom();
+      const layers = map.getStyle().layers;
+      const neighborhoodLayers = layers.filter((l) =>
+        (l.id === "place_hamlet" || l.id === "place_suburbs") &&
+        (l.minzoom ?? 0) <= zoom &&
+        (l.maxzoom ?? 24) >= zoom
+      );
+      return {
+        zoom,
+        neighborhoodLayerIds: neighborhoodLayers.map((l) => l.id),
+        neighborhoodLayerCount: neighborhoodLayers.length,
+      };
+    });
+
+    expect(result, "map not accessible").not.toHaveProperty("error");
+    const { zoom, neighborhoodLayerIds, neighborhoodLayerCount } = result as {
+      zoom: number;
+      neighborhoodLayerIds: string[];
+      neighborhoodLayerCount: number;
+    };
+
+    console.log(`Default zoom: ${zoom.toFixed(2)}, neighborhood layers active: ${neighborhoodLayerIds.join(", ") || "none"}`);
+
+    expect(
+      zoom,
+      `Default zoom ${zoom.toFixed(2)} < 12 — neighborhood labels won't render; check FRESNO_ZOOM`,
+    ).toBeGreaterThanOrEqual(12);
+
+    expect(
+      neighborhoodLayerCount,
+      `No place_hamlet/place_suburbs layers active at zoom ${zoom.toFixed(2)} — basemap may have changed`,
+    ).toBeGreaterThan(0);
+  });
+});
+
 // ─── hover interaction ──────────────────────────────────────────────────────
 
 test.describe("Boundary hover", () => {

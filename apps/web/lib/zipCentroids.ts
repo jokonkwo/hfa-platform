@@ -22,4 +22,6 @@ export const ZIP_CENTROIDS: Record<string, [number, number]> = {
 };
 
 export const FRESNO_CENTER: [number, number] = [-119.7871, 36.7378]; // [lon, lat]
-export const FRESNO_ZOOM = 10;
+// zoom 12 = first zoom where place_hamlet/place_suburbs layers render (neighborhood names).
+// zoom 13 adds roadname_major. Confirmed via Playwright layer audit (2026-07-27).
+export const FRESNO_ZOOM = 12;
