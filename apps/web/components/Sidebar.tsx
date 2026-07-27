@@ -121,7 +121,7 @@ export function Sidebar({ data, onSelectZip, ingestionEmpty }: SidebarProps) {
         ) : (
           <ul className="space-y-1">
             {ranked.map((row) => (
-              <li key={row.zip}>
+              <li key={row.zip} data-zip={row.zip}>
                 <button
                   onClick={() => onSelectZip(row.zip)}
                   className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-gray-50"

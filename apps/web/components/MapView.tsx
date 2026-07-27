@@ -25,6 +25,7 @@ const CARTO_POSITRON_STYLE =
 // MapLibre v6 derives its worker URL from the absolute bundle path, which
 // Next.js cannot serve. Point it at the copy we placed in public/ instead.
 maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
+console.log("[HFA-DIAG 4] setWorkerUrl called. workerUrl is now:", maplibregl.getWorkerUrl());
 
 const SOURCE_ID = "zips";
 const LAYER_ID = "zip-circles";
@@ -235,82 +236,121 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const container = containerRef.current;
+    let isDestroyed = false;
+    let ro: ResizeObserver | null = null;
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: CARTO_POSITRON_STYLE,
-      center: FRESNO_CENTER,
-      zoom: FRESNO_ZOOM,
-      attributionControl: { compact: true },
-    });
-    mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl(), "top-left");
+    // Defer map construction until after the browser's first layout pass so
+    // that the flex container has resolved its dimensions before MapLibre reads
+    // them to size the WebGL canvas.
+    const rafId = requestAnimationFrame(() => {
+      if (isDestroyed || mapRef.current) return;
 
-    map.on("load", () => {
-      // Point / circle layer for AQI markers.
-      map.addSource(SOURCE_ID, {
-        type: "geojson",
-        data: buildPointGeoJSON(dataRef.current),
+      const rect = container.getBoundingClientRect();
+      console.log("[HFA-DIAG 2] container dims at Map init:", {
+        width: rect.width,
+        height: rect.height,
+        offsetWidth: container.offsetWidth,
+        offsetHeight: container.offsetHeight,
       });
-      map.addLayer({
-        id: LAYER_ID,
-        type: "circle",
-        source: SOURCE_ID,
-        paint: {
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8, 6,
-            12, 10,
-          ],
-          "circle-color": ["get", "color"],
-          "circle-opacity": 0.9,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#ffffff",
-        },
+      console.log("[HFA-DIAG 4] constructing Map. workerUrl:", maplibregl.getWorkerUrl());
+
+      const map = new maplibregl.Map({
+        container,
+        style: CARTO_POSITRON_STYLE,
+        center: FRESNO_CENTER,
+        zoom: FRESNO_ZOOM,
+        attributionControl: { compact: true },
+        // Preserves the WebGL back buffer so readPixels works in automated tests.
+        // Headless Chrome clears the buffer after each frame without this.
+        canvasContextAttributes: { preserveDrawingBuffer: true },
       });
-      readyRef.current = true;
+      mapRef.current = map;
+      map.addControl(new maplibregl.NavigationControl(), "top-left");
 
-      map.on("mouseenter", LAYER_ID, () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", LAYER_ID, () => {
-        map.getCanvas().style.cursor = "";
-      });
+      // Redraw canvas whenever the container changes size (handles flex layout
+      // settling after initial render).
+      ro = new ResizeObserver(() => { mapRef.current?.resize(); });
+      ro.observe(container);
 
-      map.on("click", LAYER_ID, (e: maplibregl.MapLayerMouseEvent) => {
-        const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
-        if (!feature) return;
-        const props = feature.properties as ZipFeatureProps;
-        const zip = props.zip;
-        const centroid = ZIP_CENTROIDS[zip];
-        if (!centroid) return;
-        const [lat, lon] = centroid;
-
-        popupRef.current?.remove();
-        const html = `
-          <div style="font-family: system-ui, sans-serif; padding: 10px 12px; min-width: 150px;">
-            <div style="font-size: 15px; font-weight: 700;">${props.zip}</div>
-            <div style="font-size: 12px; color: #4b5563; margin-bottom: 6px;">${props.town ?? ""}</div>
-            <div style="font-size: 13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
-            <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click for details →</div>
-          </div>`;
-        popupRef.current = new maplibregl.Popup({ closeButton: true, offset: 14 })
-          .setLngLat([lon, lat])
-          .setHTML(html)
-          .addTo(map);
-
-        onSelectRef.current(zip);
+      map.on("error", (e) => console.error("[HFA-DIAG 3] map error event:", e.error));
+      map.on("styleimagemissing", (e) => console.warn("[HFA-DIAG 3] styleimagemissing:", e.id));
+      map.once("style.load", () => console.log("[HFA-DIAG 4] style.load fired"));
+      map.once("idle", () => {
+        console.log("[HFA-DIAG 4] map idle (fully rendered)");
+        (window as Window & typeof globalThis & { __hfaMapIdle?: boolean }).__hfaMapIdle = true;
       });
 
-      // If boundaries already arrived before the map loaded, add them now.
-      if (boundariesRef.current) syncBoundaries();
+      map.on("load", () => {
+        console.log("[HFA-DIAG 4] map 'load' event fired — adding sources/layers");
+        // Expose to test automation — 'load' fires reliably even in headless environments.
+        (window as Window & typeof globalThis & { __hfaMapLoaded?: boolean }).__hfaMapLoaded = true;
+        map.addSource(SOURCE_ID, {
+          type: "geojson",
+          data: buildPointGeoJSON(dataRef.current),
+        });
+        map.addLayer({
+          id: LAYER_ID,
+          type: "circle",
+          source: SOURCE_ID,
+          paint: {
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              8, 6,
+              12, 10,
+            ],
+            "circle-color": ["get", "color"],
+            "circle-opacity": 0.9,
+            "circle-stroke-width": 1.5,
+            "circle-stroke-color": "#ffffff",
+          },
+        });
+        readyRef.current = true;
+
+        map.on("mouseenter", LAYER_ID, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseleave", LAYER_ID, () => {
+          map.getCanvas().style.cursor = "";
+        });
+
+        map.on("click", LAYER_ID, (e: maplibregl.MapLayerMouseEvent) => {
+          const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
+          if (!feature) return;
+          const props = feature.properties as ZipFeatureProps;
+          const zip = props.zip;
+          const centroid = ZIP_CENTROIDS[zip];
+          if (!centroid) return;
+          const [lat, lon] = centroid;
+
+          popupRef.current?.remove();
+          const html = `
+            <div style="font-family: system-ui, sans-serif; padding: 10px 12px; min-width: 150px;">
+              <div style="font-size: 15px; font-weight: 700;">${props.zip}</div>
+              <div style="font-size: 12px; color: #4b5563; margin-bottom: 6px;">${props.town ?? ""}</div>
+              <div style="font-size: 13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
+              <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click for details →</div>
+            </div>`;
+          popupRef.current = new maplibregl.Popup({ closeButton: true, offset: 14 })
+            .setLngLat([lon, lat])
+            .setHTML(html)
+            .addTo(map);
+
+          onSelectRef.current(zip);
+        });
+
+        if (boundariesRef.current) syncBoundaries();
+      });
     });
 
     return () => {
+      isDestroyed = true;
+      cancelAnimationFrame(rafId);
+      ro?.disconnect();
       popupRef.current?.remove();
-      map.remove();
+      mapRef.current?.remove();
       mapRef.current = null;
       readyRef.current = false;
     };
