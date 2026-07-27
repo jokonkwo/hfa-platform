@@ -10,7 +10,6 @@ import * as maplibregl from "maplibre-gl";
 import type {
   GeoJSONSource,
   MapGeoJSONFeature,
-  StyleSpecification,
 } from "maplibre-gl";
 import type { ZipNow } from "@/lib/types";
 import { categoryColor } from "@/lib/aqi";
@@ -20,37 +19,28 @@ import {
   FRESNO_ZOOM,
 } from "@/lib/zipCentroids";
 
+const CARTO_POSITRON_STYLE =
+  "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+
 const SOURCE_ID = "zips";
 const LAYER_ID = "zip-circles";
-
-// Minimal MapLibre style using free OSM raster tiles.
-const OSM_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
-      maxzoom: 19,
-    },
-  },
-  layers: [
-    {
-      id: "osm",
-      type: "raster",
-      source: "osm",
-    },
-  ],
-};
+const BOUNDARY_SOURCE_ID = "zip-boundaries";
+const BOUNDARY_FILL_ID = "zip-boundary-fill";
+const BOUNDARY_OUTLINE_ID = "zip-boundary-outline";
 
 export interface MapViewHandle {
   flyToZip: (zip: string) => void;
 }
 
+// Accepts raw GeoJSON from GET /v1/zips/boundaries
+export type BoundaryCollection = GeoJSON.FeatureCollection<
+  GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  { ZCTA5: string }
+>;
+
 interface MapViewProps {
-  // ZIPs already filtered by the active AQI range.
   data: ZipNow[];
+  boundaries: BoundaryCollection | null;
   onSelectZip: (zip: string) => void;
 }
 
@@ -62,16 +52,14 @@ type ZipFeatureProps = {
   color: string;
 };
 
-function buildGeoJSON(
+function buildPointGeoJSON(
   data: ZipNow[],
 ): GeoJSON.FeatureCollection<GeoJSON.Point, ZipFeatureProps> {
   const features: GeoJSON.Feature<GeoJSON.Point, ZipFeatureProps>[] = [];
   for (const row of data) {
     const centroid = ZIP_CENTROIDS[row.zip];
     if (!centroid) {
-      console.warn(
-        `[MapView] no centroid for ZIP ${row.zip} — skipping marker`,
-      );
+      console.warn(`[MapView] no centroid for ZIP ${row.zip} — skipping marker`);
       continue;
     }
     const [lat, lon] = centroid;
@@ -90,8 +78,33 @@ function buildGeoJSON(
   return { type: "FeatureCollection", features };
 }
 
+// Join boundary polygons with current AQI data so each polygon carries a color.
+// ZIPs with no current data are given opacity 0 via color "transparent".
+function buildBoundaryGeoJSON(
+  boundaries: BoundaryCollection,
+  data: ZipNow[],
+): GeoJSON.FeatureCollection {
+  const aqiByZip = new Map(data.map((r) => [r.zip, r]));
+  const features: GeoJSON.Feature[] = boundaries.features.map((ft) => {
+    const zip = ft.properties?.ZCTA5 ?? "";
+    const row = aqiByZip.get(zip);
+    return {
+      ...ft,
+      properties: {
+        zip,
+        color: row ? categoryColor(row.category) : "#cccccc",
+        hasData: row ? 1 : 0,
+        aqi: row?.aqi ?? null,
+        category: row?.category ?? null,
+        town: row?.town ?? null,
+      },
+    };
+  });
+  return { type: "FeatureCollection", features };
+}
+
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
-  { data, onSelectZip },
+  { data, boundaries, onSelectZip },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -99,9 +112,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const popupRef = useRef<maplibregl.Popup | null>(null);
   const readyRef = useRef(false);
   const dataRef = useRef<ZipNow[]>(data);
+  const boundariesRef = useRef<BoundaryCollection | null>(boundaries);
   const onSelectRef = useRef(onSelectZip);
 
   dataRef.current = data;
+  boundariesRef.current = boundaries;
   onSelectRef.current = onSelectZip;
 
   useImperativeHandle(ref, () => ({
@@ -114,12 +129,104 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     },
   }));
 
-  // Update the source data whenever `data` changes.
-  const syncData = () => {
+  const syncPoints = () => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
     const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
-    if (src) src.setData(buildGeoJSON(dataRef.current));
+    if (src) src.setData(buildPointGeoJSON(dataRef.current));
+  };
+
+  const syncBoundaries = () => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    const bounds = boundariesRef.current;
+    if (!bounds) return;
+    const src = map.getSource(BOUNDARY_SOURCE_ID) as GeoJSONSource | undefined;
+    if (src) {
+      src.setData(buildBoundaryGeoJSON(bounds, dataRef.current));
+    } else {
+      // First time boundaries arrive after the map is ready — add source + layers.
+      map.addSource(BOUNDARY_SOURCE_ID, {
+        type: "geojson",
+        data: buildBoundaryGeoJSON(bounds, dataRef.current),
+      });
+      map.addLayer(
+        {
+          id: BOUNDARY_FILL_ID,
+          type: "fill",
+          source: BOUNDARY_SOURCE_ID,
+          paint: {
+            "fill-color": ["get", "color"],
+            "fill-opacity": [
+              "case",
+              ["==", ["get", "hasData"], 1],
+              0.35,
+              0.08,
+            ],
+          },
+        },
+        LAYER_ID, // insert below the circle layer
+      );
+      map.addLayer(
+        {
+          id: BOUNDARY_OUTLINE_ID,
+          type: "line",
+          source: BOUNDARY_SOURCE_ID,
+          paint: {
+            "line-color": ["get", "color"],
+            "line-width": 1.5,
+            "line-opacity": [
+              "case",
+              ["==", ["get", "hasData"], 1],
+              0.7,
+              0.2,
+            ],
+          },
+        },
+        LAYER_ID,
+      );
+
+      // Click on polygon also opens the detail panel.
+      map.on("mouseenter", BOUNDARY_FILL_ID, () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", BOUNDARY_FILL_ID, () => {
+        if (!map.queryRenderedFeatures(undefined, { layers: [LAYER_ID] }).length) {
+          map.getCanvas().style.cursor = "";
+        }
+      });
+      map.on("click", BOUNDARY_FILL_ID, (e: maplibregl.MapLayerMouseEvent) => {
+        const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
+        if (!feature) return;
+        const props = feature.properties as {
+          zip: string;
+          town: string;
+          aqi: number;
+          category: string;
+          hasData: number;
+        };
+        if (!props.hasData) return;
+        const centroid = ZIP_CENTROIDS[props.zip];
+        const lngLat = centroid
+          ? ([centroid[1], centroid[0]] as [number, number])
+          : e.lngLat;
+
+        popupRef.current?.remove();
+        const html = `
+          <div style="font-family: system-ui, sans-serif; padding: 10px 12px; min-width: 150px;">
+            <div style="font-size: 15px; font-weight: 700;">${props.zip}</div>
+            <div style="font-size: 12px; color: #4b5563; margin-bottom: 6px;">${props.town ?? ""}</div>
+            <div style="font-size: 13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
+            <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click for details →</div>
+          </div>`;
+        popupRef.current = new maplibregl.Popup({ closeButton: true, offset: 14 })
+          .setLngLat(lngLat)
+          .setHTML(html)
+          .addTo(map);
+
+        onSelectRef.current(props.zip);
+      });
+    }
   };
 
   useEffect(() => {
@@ -127,7 +234,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: OSM_STYLE,
+      style: CARTO_POSITRON_STYLE,
       center: FRESNO_CENTER,
       zoom: FRESNO_ZOOM,
       attributionControl: { compact: true },
@@ -136,9 +243,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     map.addControl(new maplibregl.NavigationControl(), "top-left");
 
     map.on("load", () => {
+      // Point / circle layer for AQI markers.
       map.addSource(SOURCE_ID, {
         type: "geojson",
-        data: buildGeoJSON(dataRef.current),
+        data: buildPointGeoJSON(dataRef.current),
       });
       map.addLayer({
         id: LAYER_ID,
@@ -149,15 +257,13 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             "interpolate",
             ["linear"],
             ["zoom"],
-            8,
-            7,
-            12,
-            14,
+            8, 6,
+            12, 10,
           ],
           "circle-color": ["get", "color"],
-          "circle-opacity": 0.85,
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#1f2937",
+          "circle-opacity": 0.9,
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#ffffff",
         },
       });
       readyRef.current = true;
@@ -178,25 +284,24 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         if (!centroid) return;
         const [lat, lon] = centroid;
 
-        // Tier-1 tooltip
         popupRef.current?.remove();
         const html = `
           <div style="font-family: system-ui, sans-serif; padding: 10px 12px; min-width: 150px;">
             <div style="font-size: 15px; font-weight: 700;">${props.zip}</div>
             <div style="font-size: 12px; color: #4b5563; margin-bottom: 6px;">${props.town ?? ""}</div>
             <div style="font-size: 13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
-            <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click marker for details →</div>
+            <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click for details →</div>
           </div>`;
-        popupRef.current = new maplibregl.Popup({
-          closeButton: true,
-          offset: 14,
-        })
+        popupRef.current = new maplibregl.Popup({ closeButton: true, offset: 14 })
           .setLngLat([lon, lat])
           .setHTML(html)
           .addTo(map);
 
         onSelectRef.current(zip);
       });
+
+      // If boundaries already arrived before the map loaded, add them now.
+      if (boundariesRef.current) syncBoundaries();
     });
 
     return () => {
@@ -205,11 +310,22 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       mapRef.current = null;
       readyRef.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sync point data when AQI data changes.
   useEffect(() => {
-    syncData();
+    syncPoints();
+    // Also re-color boundaries when data/filter changes.
+    if (boundariesRef.current) syncBoundaries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+
+  // Sync boundaries when they first arrive (async fetch).
+  useEffect(() => {
+    if (boundaries) syncBoundaries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boundaries]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 });
