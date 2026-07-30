@@ -159,7 +159,23 @@ Adding an orchestrator now would impose infra overhead (a running scheduler proc
 
 ---
 
-## 7. Subagents (start with these two, add more as needed)
+## 7. Raw landing zone — decision not to add one (yet)
+
+**Current state:** The bronze tables (`bronze_sensor_now_raw_10min`, `bronze_discovery_daily`, etc.) serve as the de facto raw/immutable layer. There is no separate pre-bronze landing zone.
+
+**Why not now:** At current scale — single county, small sensor panel, one source system — a separate landing zone adds real operational complexity (two systems, dual permissions, more failure surface) without proportional benefit. The bronze tables are append-only and effectively immutable in practice.
+
+**Reconsider if** the project grows to genuine production scale with any of:
+- Multiple source systems with different schemas or ingestion cadences
+- Need for multi-engine interoperability (e.g., Spark, Trino, or external consumers reading raw data directly)
+- Regulatory or audit requirements for byte-exact raw retention independent of the warehouse
+- Real concern about migrating off MotherDuck someday — a landing zone in object storage would decouple raw data from the warehouse vendor
+
+**Middle path worth evaluating first** (before a full separate landing zone): migrate bronze tables specifically to **DuckLake** once it's out of Preview and confirmed available on the Lite plan. DuckLake tables are physically Parquet in object storage under a thin catalog, giving much of a landing zone's durability and interoperability benefit without operating two parallel raw layers. This is a lower-complexity first step than a fully separate raw system.
+
+---
+
+## 8. Subagents (start with these two, add more as needed)
 
 - `api-contract-agent` — owns `apps/api/`, keeps endpoints in sync with `docs/data_contract.md` and the `api_*` view shapes in HFA_DEV.
 - `qa-review-agent` — read-only, reviews diffs against the spec, data contract, and deployed schema before merge.
