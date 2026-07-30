@@ -34,6 +34,12 @@ async function waitForBoundaries(page: Page, timeoutMs = 15_000) {
   );
 }
 
+/** Switch to ZIP tier and wait for the fly animation to settle. */
+async function switchToZipTier(page: Page) {
+  await page.getByRole("button", { name: "ZIP", exact: true }).click();
+  await page.waitForTimeout(1_200); // flyToFresno duration=600ms + tile load
+}
+
 /**
  * Sample pixels from the WebGL canvas. Returns null if canvas or context unavailable.
  * sampleStep: read every Nth pixel in each dimension (1 = full, 4 = 1/16th).
@@ -172,7 +178,9 @@ test.describe("AQI color palette", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await waitForBoundaries(page);
-    await page.waitForTimeout(2_000);
+    // Switch to ZIP tier so individual ZIP fill colors are visible on canvas.
+    await switchToZipTier(page);
+    await page.waitForTimeout(1_500);
 
     const result = await page.evaluate(() => {
       const canvas = document.querySelector<HTMLCanvasElement>(".mapboxgl-canvas");
@@ -236,22 +244,29 @@ test.describe("AQI color palette", () => {
 // If FRESNO_ZOOM regresses to 10, this test fails.
 
 test.describe("Label visibility", () => {
-  test("neighborhood label layers active at default zoom (≥12)", async ({ page }) => {
+  test("default tier is county; ZIP tier activates neighborhood labels at zoom≥12", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
-    // No extra delay needed — we're reading style layer metadata, not waiting for tiles.
+
+    // Default tier should be "county" at CA zoom (~5).
+    const initialTier = await page.evaluate(
+      () => (window as W & { __hfaTier?: string }).__hfaTier,
+    );
+    console.log(`Initial tier: ${initialTier}`);
+    expect(initialTier, "default tier should be 'county'").toBe("county");
+
+    // Switch to ZIP tier → map flies to FRESNO_ZOOM (12).
+    await switchToZipTier(page);
 
     const result = await page.evaluate(() => {
       const map = (window as W & { __hfaMap?: { getZoom(): number; getStyle(): { layers: { id: string; minzoom?: number; maxzoom?: number; type: string }[] } } }).__hfaMap;
       if (!map) return { error: "no map" };
       const zoom = map.getZoom();
       const layers = map.getStyle().layers;
-      // Mapbox Outdoors v12 uses settlement-subdivision-label for neighborhoods/suburbs
-      // and settlement-minor-label for hamlets/small settlements (Mapbox Streets v8 naming).
       const neighborhoodLayers = layers.filter((l) =>
         (l.id === "settlement-subdivision-label" || l.id === "settlement-minor-label") &&
         (l.minzoom ?? 0) <= zoom &&
-        (l.maxzoom ?? 24) >= zoom
+        (l.maxzoom ?? 24) >= zoom,
       );
       return {
         zoom,
@@ -267,16 +282,16 @@ test.describe("Label visibility", () => {
       neighborhoodLayerCount: number;
     };
 
-    console.log(`Default zoom: ${zoom.toFixed(2)}, neighborhood layers active: ${neighborhoodLayerIds.join(", ") || "none"}`);
+    console.log(`Default zoom: ${zoom.toFixed(2)}, neighborhood layers active: ${neighborhoodLayerIds.join(", ")}`);
 
     expect(
       zoom,
-      `Default zoom ${zoom.toFixed(2)} < 12 — neighborhood labels won't render; check FRESNO_ZOOM`,
+      `Zoom ${zoom.toFixed(2)} < 12 after switching to ZIP tier — check FRESNO_ZOOM`,
     ).toBeGreaterThanOrEqual(12);
 
     expect(
       neighborhoodLayerCount,
-      `No settlement-subdivision-label/settlement-minor-label layers active at zoom ${zoom.toFixed(2)} — basemap may have changed`,
+      `No settlement labels active at zoom ${zoom.toFixed(2)} — basemap may have changed`,
     ).toBeGreaterThan(0);
   });
 });
@@ -288,7 +303,9 @@ test.describe("Boundary hover", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await waitForBoundaries(page);
-    // Let tiles render so boundaries are visible.
+    // Switch to ZIP tier so ZIP boundaries are visible on canvas.
+    await switchToZipTier(page);
+    // Let tiles render at FRESNO_ZOOM so boundaries are visible.
     await page.waitForTimeout(1_500);
 
     // Project the 93727 centroid (a "Good" ZIP with confirmed data) to canvas pixels.

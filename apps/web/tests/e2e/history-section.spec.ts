@@ -5,13 +5,14 @@ const PILOT_ZIP = "93701"; // has full history, Low AQI
 
 // Open the detail panel for a given ZIP by finding it in the sidebar.
 async function openPanel(page: import("@playwright/test").Page, zip: string) {
-  await page.goto(BASE, { waitUntil: "networkidle" });
+  // domcontentloaded avoids blocking on the 945KB county boundaries fetch
+  await page.goto(BASE, { waitUntil: "domcontentloaded" });
   // Click the sidebar row by its data-zip attribute
   const row = page.locator(`[data-zip="${zip}"]`).first();
-  await row.waitFor({ state: "visible", timeout: 10000 });
+  await row.waitFor({ state: "visible", timeout: 20_000 });
   await row.click();
-  // Wait for panel to slide in
-  await page.waitForSelector(`aside`, { timeout: 8000 });
+  // Wait for detail panel to slide in (aria-hidden="false" distinguishes it from sidebar)
+  await page.waitForSelector(`aside[aria-hidden="false"]`, { timeout: 8000 });
   await page.waitForTimeout(500); // allow panel animation
 }
 
@@ -116,7 +117,7 @@ test.describe("History section — non-pilot ZIP", () => {
   // We use 93703 which is not in PILOT_ZIPS at all.
   test("non-pilot ZIP shows honest empty state", async ({ page }) => {
     // Find a ZIP not in the pilot set — 93703 appears in live data but not pilot history
-    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.goto(BASE, { waitUntil: "domcontentloaded" });
 
     // Navigate to any ZIP in the sidebar that is NOT a pilot ZIP
     // We look for any sidebar row that doesn't match our 7 pilot ZIPs

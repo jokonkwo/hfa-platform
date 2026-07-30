@@ -1,5 +1,5 @@
 import type { ZipNow, ZipHourly, ZipDaily } from "./types";
-import type { BoundaryCollection } from "@/components/MapView";
+import type { BoundaryCollection, CountyBoundaryCollection } from "@/components/MapView";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -57,6 +57,19 @@ export async function fetchZipHourly(zip: string): Promise<ZipHourly[]> {
     return Array.isArray(data) ? (data as ZipHourly[]) : [];
   } catch {
     return [];
+  }
+}
+
+// Fetch CA county boundary polygons. Returns null on any failure (non-critical).
+export async function fetchCountyBoundaries(): Promise<CountyBoundaryCollection | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries`, {
+      cache: "force-cache",
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as CountyBoundaryCollection;
+  } catch {
+    return null;
   }
 }
 

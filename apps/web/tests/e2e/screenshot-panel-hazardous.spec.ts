@@ -1,12 +1,16 @@
 import { test } from "@playwright/test";
 
 test("screenshot detail panel for highest-AQI visible ZIP", async ({ page }) => {
-  await page.goto("http://localhost:3000", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:3000", { waitUntil: "domcontentloaded" });
 
   await page.waitForFunction(
     () => (window as unknown as Record<string, unknown>).__hfaBoundariesLoaded === true,
     { timeout: 15000 },
   );
+
+  // Switch to ZIP tier (default is county) so ZIP polygons are visible and queryable.
+  await page.getByRole("button", { name: "ZIP", exact: true }).click();
+  await page.waitForTimeout(1400); // flyToFresno + tile load
 
   // Debug: find out what layers are available and what features render at center
   const debug = await page.evaluate(() => {
@@ -20,7 +24,6 @@ test("screenshot detail panel for highest-AQI visible ZIP", async ({ page }) => 
     if (!map) return { error: "no map" };
 
     const layerIds = map.getStyle().layers.map((l) => l.id);
-    // Query at canvas center without layer filter to see what's there
     const featsCenter = map.queryRenderedFeatures([500, 332]);
     return {
       allLayers: layerIds.filter((id) => id.includes("zip") || id.includes("boundary")),
@@ -33,10 +36,10 @@ test("screenshot detail panel for highest-AQI visible ZIP", async ({ page }) => 
 
   console.log("ZIP-related layers:", JSON.stringify(debug));
 
-  // Scan using whatever layer IDs are present
+  // Pick the first visible ZIP fill layer (zip-boundary-fill appears before county-boundary-fill).
   const fillLayerId = (debug as { allLayers?: string[] }).allLayers?.find((id) =>
-    id.toLowerCase().includes("fill"),
-  ) ?? "zip-fill";
+    id.toLowerCase().includes("zip") && id.toLowerCase().includes("fill"),
+  ) ?? "zip-boundary-fill";
 
   const result = await page.evaluate((layerId: string) => {
     const map = (window as unknown as Record<string, unknown>).__hfaMap as {

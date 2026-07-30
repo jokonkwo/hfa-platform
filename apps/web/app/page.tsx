@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { MapViewHandle, BoundaryCollection } from "@/components/MapView";
+import type { MapViewHandle, BoundaryCollection, CountyBoundaryCollection } from "@/components/MapView";
 import { Sidebar } from "@/components/Sidebar";
 import { DetailPanel } from "@/components/DetailPanel";
 import { FilterPanel, DEFAULT_RANGE, type AqiRange } from "@/components/FilterPanel";
 import { AboutPanel } from "@/components/AboutPanel";
-import { fetchZipsNow, fetchZipBoundaries, ApiError } from "@/lib/api";
+import { TierControl, type MapTier } from "@/components/TierControl";
+import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow } from "@/lib/types";
 
-// MapLibre touches window/document — must be client-only.
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
   loading: () => (
@@ -27,12 +27,14 @@ export default function Home() {
   const [state, setState] = useState<LoadState>("loading");
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [boundaries, setBoundaries] = useState<BoundaryCollection | null>(null);
+  const [countyBoundaries, setCountyBoundaries] = useState<CountyBoundaryCollection | null>(null);
+  const [tier, setTier] = useState<MapTier>("county");
 
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
   const [range, setRange] = useState<AqiRange>(DEFAULT_RANGE);
   const [filterOpen, setFilterOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const mapRef = useRef<MapViewHandle | null>(null);
 
@@ -52,10 +54,8 @@ export default function Home() {
         );
         setState("error");
       });
-    // Boundaries are non-critical; fetch in parallel, silently ignore failures.
-    fetchZipBoundaries().then((b) => {
-      if (b) setBoundaries(b);
-    });
+    fetchZipBoundaries().then((b) => { if (b) setBoundaries(b); });
+    fetchCountyBoundaries().then((b) => { if (b) setCountyBoundaries(b); });
     return () => ctrl.abort();
   }, []);
 
@@ -69,11 +69,40 @@ export default function Home() {
     [rows, selectedZip],
   );
 
+  // Fresno County aggregate AQI shown in county-tier hover/popup.
+  // All data rows are Fresno County ZIPs for the pilot.
+  const fresnoAvgAqi = useMemo(() => {
+    if (rows.length === 0) return null;
+    return Math.round(rows.reduce((sum, r) => sum + r.aqi, 0) / rows.length);
+  }, [rows]);
+
   const handleSelectZip = useCallback((zip: string) => {
     setSelectedZip(zip);
     mapRef.current?.flyToZip(zip);
     setSidebarOpen(false);
   }, []);
+
+  // Tier change: fly the camera to match the new tier.
+  const handleTierChange = useCallback((newTier: MapTier) => {
+    setTier(newTier);
+    if (newTier === "county") {
+      mapRef.current?.flyToCA();
+    } else {
+      mapRef.current?.flyToFresno();
+    }
+  }, []);
+
+  // Fresno county click → switch to ZIP tier and fly to Fresno.
+  const handleCountyClick = useCallback((_geoid: string) => {
+    setTier("zip");
+    mapRef.current?.flyToFresno();
+  }, []);
+
+  // Clicking a sidebar row in county tier auto-switches to ZIP tier.
+  const handleSidebarSelectZip = useCallback((zip: string) => {
+    if (tier === "county") setTier("zip");
+    handleSelectZip(zip);
+  }, [tier, handleSelectZip]);
 
   const ingestionEmpty = state === "ready" && rows.length === 0;
 
@@ -120,7 +149,7 @@ export default function Home() {
 
       {/* Body */}
       <div className="relative flex flex-1 overflow-hidden">
-        {/* Sidebar (desktop static, mobile drawer) */}
+        {/* Sidebar */}
         <aside
           className={`absolute inset-y-0 left-0 z-30 w-[280px] flex-shrink-0 border-r border-gray-200 bg-white transition-transform duration-300 md:static md:translate-x-0 ${
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -128,7 +157,7 @@ export default function Home() {
         >
           <Sidebar
             data={filtered}
-            onSelectZip={handleSelectZip}
+            onSelectZip={handleSidebarSelectZip}
             ingestionEmpty={ingestionEmpty}
           />
         </aside>
@@ -143,7 +172,21 @@ export default function Home() {
 
         {/* Map area */}
         <main className="relative flex-1">
-          <MapView ref={mapRef} data={filtered} boundaries={boundaries} onSelectZip={handleSelectZip} />
+          <MapView
+            ref={mapRef}
+            data={filtered}
+            boundaries={boundaries}
+            countyBoundaries={countyBoundaries}
+            tier={tier}
+            fresnoAvgAqi={fresnoAvgAqi}
+            onSelectZip={handleSelectZip}
+            onCountyClick={handleCountyClick}
+          />
+
+          {/* Tier control — bottom-center map overlay */}
+          <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
+            <TierControl tier={tier} onChange={handleTierChange} />
+          </div>
 
           {/* Loading overlay */}
           {state === "loading" && (

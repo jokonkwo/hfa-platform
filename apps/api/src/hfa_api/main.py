@@ -6,6 +6,7 @@ from hfa_api.settings import get_settings
 from hfa_api.routes.health import router as health_router
 from hfa_api.routes.zips import router as zips_router
 from hfa_api.routes.coverage import router as coverage_router
+from hfa_api.routes.counties import router as counties_router
 
 logger = get_logger(__name__)
 
@@ -38,6 +39,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/health", tags=["health"])
     app.include_router(zips_router, prefix="/v1/zips", tags=["zips"])
     app.include_router(coverage_router, prefix="/v1/coverage", tags=["coverage"])
+    app.include_router(counties_router, prefix="/v1/counties", tags=["counties"])
 
     return app
 
