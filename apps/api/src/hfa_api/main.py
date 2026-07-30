@@ -7,6 +7,7 @@ from hfa_api.routes.health import router as health_router
 from hfa_api.routes.zips import router as zips_router
 from hfa_api.routes.coverage import router as coverage_router
 from hfa_api.routes.counties import router as counties_router
+from hfa_api.routes.states import router as states_router
 
 logger = get_logger(__name__)
 
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(zips_router, prefix="/v1/zips", tags=["zips"])
     app.include_router(coverage_router, prefix="/v1/coverage", tags=["coverage"])
     app.include_router(counties_router, prefix="/v1/counties", tags=["counties"])
+    app.include_router(states_router, prefix="/v1/states", tags=["states"])
 
     return app
 
@@ -61,9 +63,12 @@ def _startup() -> None:
     # Failures are non-fatal — boundaries will be fetched and cached on first request.
     if settings.warehouse_mode == "motherduck":
         try:
+            from hfa_api.routes.states import _fetch_state_boundaries
             from hfa_api.routes.counties import _fetch_county_boundaries
             from hfa_api.routes.zips import _fetch_zip_boundaries
             logger.info("Pre-warming boundary caches...")
+            _fetch_state_boundaries()
+            logger.info("State boundaries cached (US: 56 states/territories)")
             _fetch_county_boundaries("06")
             logger.info("County boundaries cached (CA: 58 counties)")
             _fetch_zip_boundaries("06019")
