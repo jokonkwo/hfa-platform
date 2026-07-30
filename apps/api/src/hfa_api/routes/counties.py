@@ -49,4 +49,5 @@ def get_county_boundaries(
     return JSONResponse(
         content={"type": "FeatureCollection", "features": features},
         media_type="application/geo+json",
+        headers={"Cache-Control": "no-store"},
     )

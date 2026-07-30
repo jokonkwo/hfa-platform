@@ -63,9 +63,7 @@ export async function fetchZipHourly(zip: string): Promise<ZipHourly[]> {
 // Fetch CA county boundary polygons. Returns null on any failure (non-critical).
 export async function fetchCountyBoundaries(): Promise<CountyBoundaryCollection | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries`, {
-      cache: "force-cache",
-    });
+    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries`);
     if (!res.ok) return null;
     return (await res.json()) as CountyBoundaryCollection;
   } catch {
@@ -76,9 +74,7 @@ export async function fetchCountyBoundaries(): Promise<CountyBoundaryCollection 
 // Fetch ZIP boundary polygons. Returns null on any failure (boundaries are non-critical).
 export async function fetchZipBoundaries(): Promise<BoundaryCollection | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries`, {
-      cache: "force-cache", // boundaries are static; cache aggressively
-    });
+    const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries`);
     if (!res.ok) return null;
     return (await res.json()) as BoundaryCollection;
   } catch {
