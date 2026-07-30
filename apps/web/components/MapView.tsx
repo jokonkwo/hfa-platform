@@ -417,7 +417,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             0.6,
             ["==", ["get", "hasData"], 1],
             0.35,
-            0.08,
+            0.18,
           ],
         },
         layout: { visibility: tierRef.current === "zip" ? "visible" : "none" },
@@ -441,7 +441,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             "case",
             ["==", ["get", "hasData"], 1],
             0.9,
-            0.35,
+            0.55,
           ],
         },
         layout: { visibility: tierRef.current === "zip" ? "visible" : "none" },
@@ -468,18 +468,18 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         properties: { zip: string; town: string; aqi: number | null; category: string | null; hasData: number };
       }).properties;
 
-      if (tooltip) {
-        if (props?.hasData) {
-          const pt = e.point;
-          tooltip.style.display = "block";
-          tooltip.style.left = `${pt.x + 14}px`;
-          tooltip.style.top = `${pt.y - 12}px`;
+      if (tooltip && props) {
+        const pt = e.point;
+        tooltip.style.display = "block";
+        tooltip.style.left = `${pt.x + 14}px`;
+        tooltip.style.top = `${pt.y - 12}px`;
+        if (props.hasData) {
           tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.zip}</span><span style="color:#6b7280;margin-left:4px">${props.town ?? ""}</span><br/><span style="font-weight:600">AQI ${props.aqi}</span><span style="color:#6b7280"> · ${props.category ?? ""}</span></div>`;
         } else {
-          tooltip.style.display = "none";
+          tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.zip}</span><br/><span style="color:#9ca3af">No sensor data</span></div>`;
         }
       }
-      (window as HoverWindow).__hfaHoveredZip = props?.hasData ? props.zip : undefined;
+      (window as HoverWindow).__hfaHoveredZip = props?.zip ?? undefined;
     });
 
     map.on("mouseleave", ZIP_BOUNDARY_FILL, () => {
