@@ -1,16 +1,14 @@
 "use client";
 
+import "mapbox-gl/dist/mapbox-gl.css";
+import type * as GeoJSON from "geojson";
 import {
   forwardRef,
   useEffect,
   useImperativeHandle,
   useRef,
 } from "react";
-import * as maplibregl from "maplibre-gl";
-import type {
-  GeoJSONSource,
-  MapGeoJSONFeature,
-} from "maplibre-gl";
+import mapboxgl from "mapbox-gl";
 import type { ZipNow } from "@/lib/types";
 import { categoryColor } from "@/lib/aqi";
 import {
@@ -19,12 +17,9 @@ import {
   FRESNO_ZOOM,
 } from "@/lib/zipCentroids";
 
-const CARTO_VOYAGER_STYLE =
-  "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
-
-// MapLibre v6 derives its worker URL from the absolute bundle path, which
-// Next.js cannot serve. Point it at the copy we placed in public/ instead.
-maplibregl.setWorkerUrl("/maplibre-gl-worker.mjs");
+// Confirmed via Mapbox docs: mapbox://styles/mapbox/outdoors-v12
+// Terrain hillshade + warm earth-tone palette matching Reventure.app aesthetic.
+const MAPBOX_OUTDOORS_STYLE = "mapbox://styles/mapbox/outdoors-v12";
 
 const SOURCE_ID = "zips";
 const LAYER_ID = "zip-circles";
@@ -83,27 +78,29 @@ function buildPointGeoJSON(
 }
 
 // Join boundary polygons with current AQI data so each polygon carries a color.
-// ZIPs with no current data are given opacity 0 via color "transparent".
+// ZIPs with no current data are given a neutral gray.
 function buildBoundaryGeoJSON(
   boundaries: BoundaryCollection,
   data: ZipNow[],
 ): GeoJSON.FeatureCollection {
   const aqiByZip = new Map(data.map((r) => [r.zip, r]));
-  const features: GeoJSON.Feature[] = boundaries.features.map((ft) => {
-    const zip = ft.properties?.ZCTA5 ?? "";
-    const row = aqiByZip.get(zip);
-    return {
-      ...ft,
-      properties: {
-        zip,
-        color: row ? categoryColor(row.category) : "#cccccc",
-        hasData: row ? 1 : 0,
-        aqi: row?.aqi ?? null,
-        category: row?.category ?? null,
-        town: row?.town ?? null,
-      },
-    };
-  });
+  const features: GeoJSON.Feature[] = boundaries.features.map(
+    (ft: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon, { ZCTA5: string }>) => {
+      const zip = ft.properties?.ZCTA5 ?? "";
+      const row = aqiByZip.get(zip);
+      return {
+        ...ft,
+        properties: {
+          zip,
+          color: row ? categoryColor(row.category) : "#cccccc",
+          hasData: row ? 1 : 0,
+          aqi: row?.aqi ?? null,
+          category: row?.category ?? null,
+          town: row?.town ?? null,
+        },
+      };
+    },
+  );
   return { type: "FeatureCollection", features };
 }
 
@@ -112,8 +109,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const popupRef = useRef<maplibregl.Popup | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const popupRef = useRef<mapboxgl.Popup | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const readyRef = useRef(false);
   const dataRef = useRef<ZipNow[]>(data);
@@ -137,7 +134,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const syncPoints = () => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
-    const src = map.getSource(SOURCE_ID) as GeoJSONSource | undefined;
+    const src = map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
     if (src) src.setData(buildPointGeoJSON(dataRef.current));
   };
 
@@ -146,7 +143,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (!map || !readyRef.current) return;
     const bounds = boundariesRef.current;
     if (!bounds) return;
-    const src = map.getSource(BOUNDARY_SOURCE_ID) as GeoJSONSource | undefined;
+    const src = map.getSource(BOUNDARY_SOURCE_ID) as mapboxgl.GeoJSONSource | undefined;
     if (src) {
       src.setData(buildBoundaryGeoJSON(bounds, dataRef.current));
     } else {
@@ -185,92 +182,100 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           type: "line",
           source: BOUNDARY_SOURCE_ID,
           paint: {
-            "line-color": ["get", "color"],
+            // Bold black outlines matching Reventure.app's boundary style.
+            "line-color": "#111111",
             "line-width": [
               "case",
               ["boolean", ["feature-state", "hover"], false],
+              3.5,
               2.5,
-              1.5,
             ],
             "line-opacity": [
               "case",
               ["==", ["get", "hasData"], 1],
-              0.7,
-              0.2,
+              0.9,
+              0.35,
             ],
           },
         },
         LAYER_ID,
       );
 
-      let hoveredFeatureId: string | number | null = null;
+      // undefined = no feature currently hovered (null would conflict with FeatureSelector.id type)
+      let hoveredFeatureId: string | number | undefined;
       const tooltip = tooltipRef.current;
       type HoverWindow = Window & typeof globalThis & { __hfaHoveredZip?: string };
 
       // Cursor-following tooltip on mousemove (distinct from click popup).
-      map.on("mousemove", BOUNDARY_FILL_ID, (e: maplibregl.MapLayerMouseEvent) => {
-        const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
-        if (!feature || feature.id === undefined) return;
+      map.on("mousemove", BOUNDARY_FILL_ID, (e: mapboxgl.MapLayerMouseEvent) => {
+        const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+        // feature.id is string | number | undefined | null — guard all falsy forms
+        if (!feature || feature.id == null) return;
+        const featureId = feature.id as string | number;
 
-        if (hoveredFeatureId !== null && hoveredFeatureId !== feature.id) {
+        if (hoveredFeatureId !== undefined && hoveredFeatureId !== featureId) {
           map.setFeatureState(
             { source: BOUNDARY_SOURCE_ID, id: hoveredFeatureId },
             { hover: false },
           );
         }
-        hoveredFeatureId = feature.id;
+        hoveredFeatureId = featureId;
         map.setFeatureState(
           { source: BOUNDARY_SOURCE_ID, id: hoveredFeatureId },
           { hover: true },
         );
         map.getCanvas().style.cursor = "pointer";
 
-        const props = feature.properties as {
-          zip: string;
-          town: string;
-          aqi: number | null;
-          category: string | null;
-          hasData: number;
-        };
+        const props = (feature as mapboxgl.GeoJSONFeature & {
+          properties: {
+            zip: string;
+            town: string;
+            aqi: number | null;
+            category: string | null;
+            hasData: number;
+          };
+        }).properties;
 
         if (tooltip) {
-          if (props.hasData) {
+          if (props?.hasData) {
             const pt = e.point;
             tooltip.style.display = "block";
             tooltip.style.left = `${pt.x + 14}px`;
             tooltip.style.top = `${pt.y - 12}px`;
-            tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.zip}</span><span style="color:#6b7280;margin-left:4px">${props.town ?? ""}</span><br/><span style="font-weight:600">AQI ${props.aqi}</span><span style="color:#6b7280"> · ${props.category ?? ""}</span></div>`;
+            tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.zip}</span><span style="color:#6b7280;margin-left:4px">${props.town ?? ""}</span><br/><span style="font-weight:600">AQI ${props.aqi}</span><span style="color:#6b7280"> · ${props.category ?? ""}</span></div>`;
           } else {
             tooltip.style.display = "none";
           }
         }
-        (window as HoverWindow).__hfaHoveredZip = props.hasData ? props.zip : undefined;
+        (window as HoverWindow).__hfaHoveredZip = props?.hasData ? props.zip : undefined;
       });
 
       map.on("mouseleave", BOUNDARY_FILL_ID, () => {
-        if (hoveredFeatureId !== null) {
+        if (hoveredFeatureId !== undefined) {
           map.setFeatureState(
             { source: BOUNDARY_SOURCE_ID, id: hoveredFeatureId },
             { hover: false },
           );
-          hoveredFeatureId = null;
+          hoveredFeatureId = undefined;
         }
         map.getCanvas().style.cursor = "";
         if (tooltip) tooltip.style.display = "none";
         (window as HoverWindow).__hfaHoveredZip = undefined;
       });
 
-      map.on("click", BOUNDARY_FILL_ID, (e: maplibregl.MapLayerMouseEvent) => {
-        const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
+      map.on("click", BOUNDARY_FILL_ID, (e: mapboxgl.MapLayerMouseEvent) => {
+        const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
         if (!feature) return;
-        const props = feature.properties as {
-          zip: string;
-          town: string;
-          aqi: number;
-          category: string;
-          hasData: number;
-        };
-        if (!props.hasData) return;
+        const props = (feature as mapboxgl.GeoJSONFeature & {
+          properties: {
+            zip: string;
+            town: string;
+            aqi: number;
+            category: string;
+            hasData: number;
+          };
+        }).properties;
+        if (!props?.hasData) return;
         const centroid = ZIP_CENTROIDS[props.zip];
         const lngLat = centroid
           ? ([centroid[1], centroid[0]] as [number, number])
@@ -284,7 +289,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             <div style="font-size: 13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
             <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click for details →</div>
           </div>`;
-        popupRef.current = new maplibregl.Popup({ closeButton: true, offset: 14 })
+        popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
           .setLngLat(lngLat)
           .setHTML(html)
           .addTo(map);
@@ -300,24 +305,33 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     let isDestroyed = false;
     let ro: ResizeObserver | null = null;
 
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!token) {
+      throw new Error(
+        "[HFA] NEXT_PUBLIC_MAPBOX_TOKEN is not set. Add it to apps/web/.env.local.",
+      );
+    }
+
     // Defer map construction until after the browser's first layout pass so
-    // that the flex container has resolved its dimensions before MapLibre reads
+    // that the flex container has resolved its dimensions before Mapbox reads
     // them to size the WebGL canvas.
     const rafId = requestAnimationFrame(() => {
       if (isDestroyed || mapRef.current) return;
 
-      const map = new maplibregl.Map({
+      const map = new mapboxgl.Map({
+        accessToken: token,
         container,
-        style: CARTO_VOYAGER_STYLE,
+        style: MAPBOX_OUTDOORS_STYLE,
         center: FRESNO_CENTER,
         zoom: FRESNO_ZOOM,
-        attributionControl: { compact: true },
+        // attributionControl takes boolean in mapbox-gl v3 MapOptions
+        attributionControl: true,
         // Preserves the WebGL back buffer so readPixels works in automated tests.
         // Headless Chrome clears the buffer after each frame without this.
-        canvasContextAttributes: { preserveDrawingBuffer: true },
+        preserveDrawingBuffer: true,
       });
       mapRef.current = map;
-      map.addControl(new maplibregl.NavigationControl(), "top-left");
+      map.addControl(new mapboxgl.NavigationControl(), "top-left");
 
       // Tooltip element: follows cursor on boundary hover, hidden by default.
       const tooltipEl = document.createElement("div");
@@ -336,7 +350,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         // Expose to test automation — 'load' fires reliably even in headless environments.
         type TestWindow = Window & typeof globalThis & {
           __hfaMapLoaded?: boolean;
-          __hfaMap?: maplibregl.Map;
+          __hfaMap?: mapboxgl.Map;
           __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number };
         };
         const tw = window as TestWindow;
@@ -374,8 +388,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           map.getCanvas().style.cursor = "";
         });
 
-        map.on("click", LAYER_ID, (e: maplibregl.MapLayerMouseEvent) => {
-          const feature = e.features?.[0] as MapGeoJSONFeature | undefined;
+        map.on("click", LAYER_ID, (e: mapboxgl.MapLayerMouseEvent) => {
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature) return;
           const props = feature.properties as ZipFeatureProps;
           const zip = props.zip;
@@ -391,7 +405,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
               <div style="font-size: 13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
               <div style="font-size: 11px; color: #2563eb; margin-top: 6px;">Click for details →</div>
             </div>`;
-          popupRef.current = new maplibregl.Popup({ closeButton: true, offset: 14 })
+          popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
             .setLngLat([lon, lat])
             .setHTML(html)
             .addTo(map);
