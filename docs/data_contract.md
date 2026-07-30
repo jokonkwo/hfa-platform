@@ -169,7 +169,9 @@ These views are the authoritative API contract. Endpoints must serve exactly the
 
 ### `GET /v1/counties/boundaries` — CA county boundary polygons
 
-Returns a GeoJSON `FeatureCollection` of all 58 California county polygons sourced from Census Cartographic Boundary Files 2023 (1:500k). Served as a static file from `apps/api/data/ca_county_boundaries.geojson` (~945KB, generated once from Census TIGER shapefile via DuckDB spatial). Registered under `apps/api/src/hfa_api/routes/counties.py`.
+**Query params:** `?state=06` (default `"06"` = California). Returns all counties for the given 2-digit FIPS state code.
+
+Returns a GeoJSON `FeatureCollection` of county polygons queried at request time from `HFA_DEV.main.raw_us_counties` (Census TIGER 2025, 3,235 US counties). Registered under `apps/api/src/hfa_api/routes/counties.py`.
 
 Each feature has three properties:
 - `GEOID` — 5-digit FIPS code (e.g. `"06019"` for Fresno County)
@@ -193,9 +195,11 @@ The frontend uses this for the **county tier** of the drill-down map hierarchy. 
 
 ### `GET /v1/zips/boundaries` — ZIP boundary polygons
 
-Returns a GeoJSON `FeatureCollection` of Fresno County ZCTA polygon geometries sourced from Census TIGER 2025. Served as a static file from `apps/api/data/fresno_zip_boundaries.geojson` (refreshed by re-running the Census TIGER fetch; no MotherDuck dependency). Each feature has a single property: `ZCTA5` (5-digit ZIP string). The frontend joins this against `/v1/zips/now` client-side to color each polygon by AQI category.
+**Query params:** `?county=06019` (default `"06019"` = Fresno County CA). Returns all ZCTAs whose centroid is within the given county GEOID (`ST_Within(ST_Centroid(geom), county_geom)`).
 
-**Note:** PMTiles (Cloudflare R2 + Tippecanoe) remains the target if coverage expands beyond Fresno County. Direct GeoJSON is appropriate at this scale (~18 polygons, 275KB).
+Returns a GeoJSON `FeatureCollection` queried at request time from `HFA_DEV.main.raw_us_zctas` (Census TIGER 2025, 33,791 US ZCTAs). Default Fresno County scope returns 55 ZIPs (18 pilot ZIPs with sensor data + 37 rural Fresno County ZIPs). Each feature has a single property: `ZCTA5` (5-digit ZIP string). The frontend joins this against `/v1/zips/now` client-side to color each polygon by AQI category.
+
+**Note:** PMTiles (Cloudflare R2 + Tippecanoe) remains the target if coverage expands significantly. The MotherDuck query approach is sufficient for single-state or single-county scope at low request volume.
 
 ```json
 {

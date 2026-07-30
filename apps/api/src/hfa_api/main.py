@@ -57,6 +57,19 @@ def _startup() -> None:
             "warehouse_mode": settings.warehouse_mode,
         },
     )
+    # Pre-warm boundary caches so the first web request hits memory, not MotherDuck.
+    # Failures are non-fatal — boundaries will be fetched and cached on first request.
+    if settings.warehouse_mode == "motherduck":
+        try:
+            from hfa_api.routes.counties import _fetch_county_boundaries
+            from hfa_api.routes.zips import _fetch_zip_boundaries
+            logger.info("Pre-warming boundary caches...")
+            _fetch_county_boundaries("06")
+            logger.info("County boundaries cached (CA: 58 counties)")
+            _fetch_zip_boundaries("06019")
+            logger.info("ZIP boundaries cached (Fresno County: 55 ZIPs)")
+        except Exception as e:
+            logger.warning("Boundary cache warm-up failed (will retry on first request)", extra={"error": str(e)})
 
 
 # FastAPI entrypoint

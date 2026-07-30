@@ -78,9 +78,11 @@ test.describe("ZIP boundary visibility — all 18 ZIPs", () => {
     expect(result, "map not accessible or source not found").not.toBeNull();
     const { featCount, uniqueZips } = result!;
     console.log(`ZIP source (_data): ${featCount} features, ${uniqueZips.length} unique ZIPs: ${uniqueZips.join(", ")}`);
-    expect(uniqueZips.length, "expected 18 distinct ZIP polygons in source").toBe(18);
+    // Dynamic query now returns all ZIPs whose centroid is within Fresno County (55 ZIPs).
+    // Verify count is ≥18 and all 18 pilot ZIPs are present.
+    expect(uniqueZips.length, "expected ≥18 ZIP polygons in source").toBeGreaterThanOrEqual(18);
     for (const z of ALL_18_ZIPS) {
-      expect(uniqueZips, `ZIP ${z} missing from source`).toContain(z);
+      expect(uniqueZips, `Pilot ZIP ${z} missing from source`).toContain(z);
     }
   });
 

@@ -88,6 +88,26 @@ def connect_readonly() -> Any:
     )
 
 
+def query_rows(sql: str, params: Optional[list[Any]] = None, *, spatial: bool = False) -> list[tuple]:
+    """Run a query and return raw rows as a list of tuples.
+
+    Pass spatial=True to load the DuckDB spatial extension before executing
+    (required for ST_AsGeoJSON, ST_Intersects, etc.).
+    """
+    con = connect_readonly()
+    try:
+        if spatial:
+            con.execute("LOAD spatial")
+        if params:
+            return con.execute(sql, params).fetchall()
+        return con.execute(sql).fetchall()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
 def query_df(sql: str, params: Optional[list[Any]] = None) -> Any:
     """
     Convenience helper: run a query and return a dataframe-like object.

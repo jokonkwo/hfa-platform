@@ -390,6 +390,12 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (!bounds) return;
     const boundaryData = buildZipBoundaryGeoJSON(bounds, dataRef.current);
 
+    // Signal that zip_now data has been applied to the map (at least one ZIP has data).
+    if (dataRef.current.length > 0) {
+      type ZipNowWin = Window & typeof globalThis & { __hfaZipNowLoaded?: boolean };
+      (window as ZipNowWin).__hfaZipNowLoaded = true;
+    }
+
     const src = map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource | undefined;
     if (src) {
       src.setData(boundaryData);
@@ -634,10 +640,12 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         __hfaProjectLngLat?: unknown;
         __hfaMap?: unknown;
         __hfaTier?: unknown;
+        __hfaZipNowLoaded?: unknown;
       };
       (window as CleanWindow).__hfaProjectLngLat = undefined;
       (window as CleanWindow).__hfaMap = undefined;
       (window as CleanWindow).__hfaTier = undefined;
+      (window as CleanWindow).__hfaZipNowLoaded = undefined;
       popupRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;

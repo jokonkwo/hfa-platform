@@ -2,22 +2,17 @@ from __future__ import annotations
 
 import datetime
 import json
-from pathlib import Path
+from functools import lru_cache
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from hfa_api.db.connection import query_df
+from hfa_api.db.connection import query_df, query_rows
 from hfa_api.logging_setup import get_logger
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-# Resolved relative to this file: apps/api/src/hfa_api/routes/ (4 levels up = apps/api/)
-_BOUNDARIES_FILE = (
-    Path(__file__).parent.parent.parent.parent / "data" / "fresno_zip_boundaries.geojson"
-)
 
 
 def _to_records(df: Any) -> list[dict]:
@@ -29,13 +24,48 @@ def _to_records(df: Any) -> list[dict]:
     return records
 
 
+@lru_cache(maxsize=32)
+def _fetch_zip_boundaries(county: str) -> list[dict]:
+    """Fetch ZIP GeoJSON features for a county, cached for the process lifetime."""
+    rows = query_rows(
+        """
+        SELECT z.zip5, ST_AsGeoJSON(z.geom) AS geometry_json
+        FROM raw_us_zctas z
+        WHERE ST_Within(
+            ST_Centroid(z.geom),
+            (SELECT geom FROM raw_us_counties WHERE geoid = ?)
+        )
+        ORDER BY z.zip5
+        """,
+        [county],
+        spatial=True,
+    )
+    return [
+        {
+            "type": "Feature",
+            "geometry": json.loads(geom_json),
+            "properties": {"ZCTA5": zip5},
+        }
+        for zip5, geom_json in rows
+    ]
+
+
 @router.get("/boundaries", summary="ZIP boundary polygons as GeoJSON FeatureCollection")
-def get_zip_boundaries() -> JSONResponse:
-    if not _BOUNDARIES_FILE.exists():
-        raise HTTPException(status_code=503, detail="Boundary data not available")
-    with open(_BOUNDARIES_FILE) as f:
-        data = json.load(f)
-    return JSONResponse(content=data, media_type="application/geo+json")
+def get_zip_boundaries(
+    county: str = Query(default="06019", description="5-digit county GEOID (default: 06019 = Fresno County CA)"),
+) -> JSONResponse:
+    try:
+        features = _fetch_zip_boundaries(county)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"ZIP boundary query failed: {e}")
+
+    if not features:
+        raise HTTPException(status_code=404, detail=f"No ZIP boundaries found for county '{county}'")
+
+    return JSONResponse(
+        content={"type": "FeatureCollection", "features": features},
+        media_type="application/geo+json",
+    )
 
 
 @router.get("/now", summary="Current conditions for all ZIPs")

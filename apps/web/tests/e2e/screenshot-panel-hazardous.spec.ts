@@ -7,6 +7,11 @@ test("screenshot detail panel for highest-AQI visible ZIP", async ({ page }) => 
     () => (window as unknown as Record<string, unknown>).__hfaBoundariesLoaded === true,
     { timeout: 15000 },
   );
+  // Also wait for zip_now data to be applied (hasData on at least one ZIP).
+  await page.waitForFunction(
+    () => (window as unknown as Record<string, unknown>).__hfaZipNowLoaded === true,
+    { timeout: 10000 },
+  );
 
   // Switch to ZIP tier (default is county) so ZIP polygons are visible and queryable.
   await page.getByRole("button", { name: "ZIP", exact: true }).click();
