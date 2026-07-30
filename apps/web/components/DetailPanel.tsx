@@ -116,11 +116,11 @@ export function DetailPanel({ zip, onClose }: DetailPanelProps) {
 
             <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center">
               <p className="text-sm font-medium text-gray-500">
-                Historical trends coming soon
+                Not enough historical data yet
               </p>
               <p className="mt-1 text-xs text-gray-400">
-                Hourly and daily trend charts will appear here once the rollup
-                tables are populated.
+                A trend chart will appear here once air quality readings
+                accumulate over multiple days. Check back as more data comes in.
               </p>
             </div>
           </div>
