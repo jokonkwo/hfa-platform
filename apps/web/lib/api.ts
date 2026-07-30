@@ -1,4 +1,4 @@
-import type { ZipNow } from "./types";
+import type { ZipNow, ZipHourly, ZipDaily } from "./types";
 import type { BoundaryCollection } from "@/components/MapView";
 
 const API_BASE_URL =
@@ -32,6 +32,32 @@ export async function fetchZipsNow(signal?: AbortSignal): Promise<ZipNow[]> {
   const data = (await res.json()) as unknown;
   if (!Array.isArray(data)) return [];
   return data as ZipNow[];
+}
+
+export async function fetchZipDaily(zip: string): Promise<ZipDaily[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v1/zips/${zip}/daily`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as unknown;
+    return Array.isArray(data) ? (data as ZipDaily[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchZipHourly(zip: string): Promise<ZipHourly[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v1/zips/${zip}/hourly`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as unknown;
+    return Array.isArray(data) ? (data as ZipHourly[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 // Fetch ZIP boundary polygons. Returns null on any failure (boundaries are non-critical).

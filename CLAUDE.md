@@ -94,8 +94,8 @@ A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the 
 | `bronze_api_cost_daily` | 2 rows | Manual cost tracking |
 | `silver_sensor_corrected_10min` | 160 rows | Non-EPA corrected PM2.5 + `ab_agree` QC + `fresh_minutes` staleness |
 | `silver_zip_now_10min` | 32 rows | ZIP rollup of current conditions |
-| `silver_zip_hourly` | **0 rows** | Schema exists; rollup job was never run |
-| `silver_zip_daily` | **0 rows** | Schema exists; rollup job was never run |
+| `silver_zip_hourly` | **13,405 rows** | Backfilled 2026-07-30 from HFA (cross-DB INSERT); 7 ZIPs, Oct 7 2025 – Jan 21 2026. ZIPs 93705/93710 excluded. |
+| `silver_zip_daily` | **602 rows** | Backfilled 2026-07-30 from HFA; 7 ZIPs × 86 days. Jan 21 partial (coverage_hours=4). |
 | `gold_zip_now` | 8 rows | Final "now" table with `category`, `freshness_pct`, `qc_badge` |
 | `api_zip_now` | View | Thin wrapper on `gold_zip_now` — defines FastAPI `/zip/now` response shape |
 | `api_zip_hourly` | View | Thin wrapper on `silver_zip_hourly` — currently empty |
@@ -119,9 +119,8 @@ A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the 
 
 ### Doesn't exist yet (in git or deployed)
 
-- `apps/web`, `apps/mobile`, `packages/shared`
-- Any API route beyond `/health` in `apps/api`
-- SQL/Python code for `silver_zip_hourly` and `silver_zip_daily` rollups
+- `apps/mobile`, `packages/shared`
+- SQL/Python code for `silver_zip_hourly` and `silver_zip_daily` rollups (backfill was a one-time cross-DB INSERT — not a committed dbt model yet)
 - The EPA/Barkjohn correction formula (with temperature)
 - cron-job.org re-enable (ingestion paused — see §2 Scheduling row and `docs/scheduling.md`)
 - Committed DDL/transforms for the deployed bronze/silver/gold tables
@@ -146,7 +145,21 @@ A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the 
 
 ---
 
-## 6. Subagents (start with these two, add more as needed)
+## 6. Pipeline orchestration — decision not to add one
+
+**Decision:** No dedicated orchestration tool (Dagster, Airflow, Prefect) for the foreseeable POC.
+
+**Why:** There is currently one pipeline (`ingest.yml` / PurpleAir poll), ingestion is paused while API point budget is confirmed, and all runs are manual (`workflow_dispatch`). There is no multi-job coordination need — no fan-out, no inter-job dependencies, no parallel schedules requiring coordination, and no requirement for automated retries or structured failure alerting beyond GitHub Actions' built-in notifications.
+
+Adding an orchestrator now would impose infra overhead (a running scheduler process, another service to maintain, a new mental model for contributors) without solving any current problem. This is the same pattern already established across this project: don't add infrastructure until a real constraint demands it.
+
+**Interim approach:** Backfill and pipeline runs are logged in `docs/benchmark_log.md` with timestamps and row counts. That's sufficient for the POC audit trail.
+
+**Reconsider when:** Ingestion resumes AND multiple recurring jobs with inter-dependencies emerge — e.g., if a gold rollup must wait on silver, and a notification must fire on failure, on a schedule, reliably. That's the threshold where an orchestrator earns its keep.
+
+---
+
+## 7. Subagents (start with these two, add more as needed)
 
 - `api-contract-agent` — owns `apps/api/`, keeps endpoints in sync with `docs/data_contract.md` and the `api_*` view shapes in HFA_DEV.
 - `qa-review-agent` — read-only, reviews diffs against the spec, data contract, and deployed schema before merge.

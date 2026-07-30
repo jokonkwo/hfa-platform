@@ -224,6 +224,10 @@ Single-ZIP endpoint returns one object (not an array). Returns 404 if ZIP not fo
 
 Array ordered by `hour_utc DESC`. May be empty if no hourly data exists for that ZIP.
 
+**Pilot data availability (as of 2026-07-30):** 7 ZIPs have full hourly history: 93701, 93702, 93711, 93720, 93727, 93728, 93730. Data spans Oct 7 2025 – Jan 21 2026 (13,405 rows). ZIPs 93705 (10 days) and 93710 (2 days) are excluded from the backfill — they return no rows. The gap Oct 27 – Nov 17 2025 is real and must render as a visible discontinuity in any chart, never interpolated.
+
+**Backfill source:** `silver_zip_hourly` in HFA_DEV was populated via cross-database INSERT from `HFA.main.silver_sensor_corrected_10min` (the `HFA` database, not HFA_DEV). All app queries continue to target HFA_DEV at runtime.
+
 ### `api_zip_daily` → `GET /v1/zips/{zip}/daily`
 
 ```json
@@ -243,6 +247,12 @@ Array ordered by `hour_utc DESC`. May be empty if no hourly data exists for that
 ```
 
 Array ordered by `date DESC`. May be empty if no daily data exists for that ZIP.
+
+**Date field type quirk:** The `date` column in `silver_zip_daily` is typed DATE in DuckDB but arrives in the API response as a TIMESTAMP string (e.g., `"2026-01-21T00:00:00"` instead of `"2026-01-21"`) due to pandas type coercion. Frontend must normalize with `.substring(0, 10)` before display or comparison.
+
+**Pilot data availability (as of 2026-07-30):** Same 7 ZIPs as hourly; 602 daily rows spanning 86 dates. Jan 21 2026 is a partial day (coverage_hours=4, data ends ~05:58 UTC).
+
+**aqi_exceed_* type quirk:** These BIGINT columns arrive as float64 through pandas (values like `0.0`). Not used in the UI.
 
 ### `api_coverage_today` → `GET /v1/coverage/today`
 
