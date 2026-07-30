@@ -9,10 +9,11 @@ interface TierControlProps {
 
 export function TierControl({ tier, onChange }: TierControlProps) {
   return (
-    <div className="flex items-center rounded-full border border-gray-200 bg-white shadow-md overflow-hidden text-xs font-semibold">
+    <div className="flex items-center overflow-hidden rounded-full border border-gray-300 bg-white text-sm font-semibold">
       <button
         onClick={() => onChange("county")}
-        className={`px-3 py-1.5 transition-colors ${
+        aria-pressed={tier === "county"}
+        className={`px-4 py-1.5 transition-colors ${
           tier === "county"
             ? "bg-gray-900 text-white"
             : "text-gray-600 hover:bg-gray-50"
@@ -22,7 +23,8 @@ export function TierControl({ tier, onChange }: TierControlProps) {
       </button>
       <button
         onClick={() => onChange("zip")}
-        className={`px-3 py-1.5 transition-colors border-l border-gray-200 ${
+        aria-pressed={tier === "zip"}
+        className={`border-l border-gray-300 px-4 py-1.5 transition-colors ${
           tier === "zip"
             ? "bg-gray-900 text-white"
             : "text-gray-600 hover:bg-gray-50"

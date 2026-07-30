@@ -108,9 +108,10 @@ export default function Home() {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* Header */}
-      <header className="relative z-40 flex h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
-        <div className="flex items-center gap-3">
+      {/* Header — 3-column: logo | tier tabs | actions */}
+      <header className="relative z-40 flex h-14 flex-shrink-0 items-center border-b border-gray-200 bg-white px-4">
+        {/* Left: hamburger + logo */}
+        <div className="flex flex-1 items-center gap-3">
           <button
             onClick={() => setSidebarOpen((o) => !o)}
             className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 md:hidden"
@@ -127,7 +128,14 @@ export default function Home() {
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Center: County/ZIP tier selector — absolutely centered so it doesn't push side sections */}
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <TierControl tier={tier} onChange={handleTierChange} />
+        </div>
+
+        {/* Right: Filter + About */}
+        <div className="flex flex-1 items-center justify-end gap-2">
           <button
             onClick={() => {
               setFilterOpen((o) => !o);
@@ -182,11 +190,6 @@ export default function Home() {
             onSelectZip={handleSelectZip}
             onCountyClick={handleCountyClick}
           />
-
-          {/* Tier control — bottom-center map overlay */}
-          <div className="absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
-            <TierControl tier={tier} onChange={handleTierChange} />
-          </div>
 
           {/* Loading overlay */}
           {state === "loading" && (

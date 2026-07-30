@@ -68,9 +68,8 @@ test.describe("ZIP boundary visibility — all 18 ZIPs", () => {
       const map = (window as MapW).__hfaMap;
       if (!map) return null;
       // Access the GeoJSON source's underlying data (internal Mapbox GL API)
-      const src = (map as unknown as Record<string, unknown>).getSource?.call(map, "zip-boundaries") as
-        | { _data?: { features?: Array<{ properties?: { zip?: string } }> } }
-        | undefined;
+      type AnyMap = { getSource: (id: string) => { _data?: { features?: Array<{ properties?: { zip?: string } }> } } | undefined };
+      const src = (map as unknown as AnyMap).getSource("zip-boundaries");
       const features = src?._data?.features ?? [];
       const zips = [...new Set(features.map((f) => f.properties?.zip).filter(Boolean))].sort() as string[];
       return { featCount: features.length, uniqueZips: zips };
