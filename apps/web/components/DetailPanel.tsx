@@ -35,6 +35,109 @@ function QcIndicator({ badge }: { badge: string }) {
   );
 }
 
+function CigaretteCard({ zip, pm25 }: { zip: string; pm25: number }) {
+  if (!(pm25 > 0)) return null;
+
+  const cigs = pm25 / 22;
+  // 30 cigs ≈ 660 µg/m³ — treat as full burn for the visual
+  const fillPct = Math.min(cigs / 30, 1);
+
+  const cigStr =
+    cigs < 0.1
+      ? "< 0.1"
+      : cigs < 10
+        ? cigs.toFixed(1)
+        : Math.round(cigs).toString();
+  const cigWord = Math.abs(cigs - 1) < 0.05 ? "cigarette" : "cigarettes";
+
+  // SVG layout
+  const W = 200, H = 20;
+  const EMBER_X = 6;
+  const BODY_X = 10, BODY_W = 164;
+  const FILTER_X = 174, FILTER_W = 26;
+  const burnW = Math.round(fillPct * BODY_W);
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <div className="mb-3">
+        <span className="text-4xl font-bold text-gray-900">≈ {cigStr}</span>
+        <span className="ml-2 text-sm font-medium text-amber-700">
+          cigarettes/day
+        </span>
+      </div>
+
+      <svg
+        width="100%"
+        viewBox={`0 0 ${W} ${H}`}
+        role="img"
+        aria-label={`Cigarette severity fill: ${Math.round(fillPct * 100)}%`}
+        className="mb-3"
+      >
+        <defs>
+          <linearGradient id="hfa-cig-burn" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#F97316" />
+            <stop offset="70%" stopColor="#FCD34D" />
+            <stop offset="100%" stopColor="#E5C840" />
+          </linearGradient>
+        </defs>
+        {/* Cigarette body (cream) */}
+        <rect
+          x={BODY_X}
+          y={4}
+          width={BODY_W}
+          height={H - 8}
+          rx={2}
+          fill="#F5F1E8"
+          stroke="#D6D3D1"
+          strokeWidth={0.5}
+        />
+        {/* Burn fill from the lit (left) end */}
+        {burnW > 0 && (
+          <rect
+            x={BODY_X}
+            y={4}
+            width={burnW}
+            height={H - 8}
+            rx={2}
+            fill="url(#hfa-cig-burn)"
+          />
+        )}
+        {/* Filter (tan) on right end */}
+        <rect
+          x={FILTER_X}
+          y={3}
+          width={FILTER_W}
+          height={H - 6}
+          rx={2}
+          fill="#D4A574"
+          stroke="#C09060"
+          strokeWidth={0.5}
+        />
+        {/* Ember at lit (left) end — glows brighter with severity */}
+        <circle
+          cx={EMBER_X}
+          cy={H / 2}
+          r={6}
+          fill="#FF6B35"
+          opacity={0.12 + fillPct * 0.25}
+        />
+        <circle
+          cx={EMBER_X}
+          cy={H / 2}
+          r={3}
+          fill="#FF8C42"
+          opacity={0.55 + fillPct * 0.35}
+        />
+        <circle cx={EMBER_X} cy={H / 2} r={1.5} fill="#FBBF24" opacity={0.9} />
+      </svg>
+
+      <p className="text-xs leading-relaxed text-gray-600">
+        {`Air in ${zip} today carries about the same long-term health risk as smoking ${cigStr} ${cigWord} — based on Berkeley Earth's PM2.5 research. This reflects long-term exposure risk, not how today will feel.`}
+      </p>
+    </div>
+  );
+}
+
 interface DetailPanelProps {
   zip: ZipNow | null;
   onClose: () => void;
@@ -77,6 +180,8 @@ export function DetailPanel({ zip, onClose }: DetailPanelProps) {
                 <CategoryBadge category={zip.category} className="text-sm px-3 py-1" />
               </div>
             </div>
+
+            <CigaretteCard zip={zip.zip} pm25={zip.pm25} />
 
             <dl className="grid grid-cols-2 gap-4 text-sm">
               <div>
