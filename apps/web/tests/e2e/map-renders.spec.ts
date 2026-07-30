@@ -1,5 +1,5 @@
 /**
- * Regression tests: MapLibre canvas rendering, AQI colors, and hover interaction.
+ * Regression tests: Mapbox GL JS canvas rendering, AQI colors, and hover interaction.
  *
  * Ground truth is runtime pixel observation via WebGL readPixels + DOM state checks.
  * Tests are intentionally NOT model-based (no snapshots) — they assert invariants
@@ -40,7 +40,7 @@ async function waitForBoundaries(page: Page, timeoutMs = 15_000) {
  */
 async function sampleCanvasPixels(page: Page, sampleStep = 4) {
   return page.evaluate((step) => {
-    const canvas = document.querySelector<HTMLCanvasElement>(".maplibregl-canvas");
+    const canvas = document.querySelector<HTMLCanvasElement>(".mapboxgl-canvas");
     if (!canvas) return null;
     const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
     if (!gl) return null;
@@ -75,15 +75,15 @@ async function sampleCanvasPixels(page: Page, sampleStep = 4) {
 test.describe("Map canvas", () => {
   test("renders non-blank tile content", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.locator(".maplibregl-canvas").first().waitFor({ state: "attached", timeout: 15_000 });
+    await page.locator(".mapboxgl-canvas").first().waitFor({ state: "attached", timeout: 15_000 });
     await waitForMapLoad(page);
     await page.waitForTimeout(2_000);
 
     const dims = await page.evaluate(() => {
-      const el = document.querySelector<HTMLCanvasElement>(".maplibregl-canvas");
+      const el = document.querySelector<HTMLCanvasElement>(".mapboxgl-canvas");
       return el ? { width: el.width, height: el.height } : null;
     });
-    expect(dims, "maplibregl-canvas element not found in DOM").not.toBeNull();
+    expect(dims, "mapboxgl-canvas element not found in DOM").not.toBeNull();
     expect(dims!.width, "canvas width must be > 0 — flexbox race likely").toBeGreaterThan(0);
     expect(dims!.height, "canvas height must be > 0 — flexbox race likely").toBeGreaterThan(0);
 
@@ -122,17 +122,17 @@ test.describe("Map canvas", () => {
   test("map navigation controls are present", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
-    await expect(page.locator(".maplibregl-ctrl-zoom-in")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".maplibregl-ctrl-zoom-out")).toBeVisible();
-    const attribution = page.locator(".maplibregl-ctrl-attrib");
-    await expect(attribution).toContainText("CARTO");
+    await expect(page.locator(".mapboxgl-ctrl-zoom-in")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".mapboxgl-ctrl-zoom-out")).toBeVisible();
+    const attribution = page.locator(".mapboxgl-ctrl-attrib");
+    await expect(attribution).toContainText("Mapbox");
   });
 });
 
 // ─── color diversity: catches monochrome basemap regression ─────────────────
 
 test.describe("Color diversity", () => {
-  test("Voyager basemap has chromatic pixel content (not monochrome)", async ({ page }) => {
+  test("Outdoors basemap has chromatic pixel content (not monochrome)", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await page.waitForTimeout(2_500);
@@ -156,9 +156,8 @@ test.describe("Color diversity", () => {
       `Mean chroma: ${meanChroma.toFixed(2)}, high-chroma fraction: ${(chromaFraction * 100).toFixed(1)}%`,
     );
 
-    // Voyager has green parks, blue water, tan roads — mean chroma must exceed 5.
-    // A monochrome style (Positron) would have mean chroma < 3.
-    // This threshold catches the "wrong basemap" mistake.
+    // Mapbox Outdoors has terrain hillshading, green vegetation, blue water, tan roads.
+    // Mean chroma must exceed 5. A monochrome style would have mean chroma < 3.
     expect(
       meanChroma,
       `Mean chroma ${meanChroma.toFixed(2)} too low — looks monochrome; check basemap style URL`,
@@ -176,7 +175,7 @@ test.describe("AQI color palette", () => {
     await page.waitForTimeout(2_000);
 
     const result = await page.evaluate(() => {
-      const canvas = document.querySelector<HTMLCanvasElement>(".maplibregl-canvas");
+      const canvas = document.querySelector<HTMLCanvasElement>(".mapboxgl-canvas");
       if (!canvas) return { error: "no canvas" };
       const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
       if (!gl) return { error: "no webgl" };
@@ -185,8 +184,8 @@ test.describe("AQI color palette", () => {
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, full);
 
       // Old saturated EPA Good color: rgb(0, 228, 0) — bright chartreuse green.
-      // New pastel Good rendered on Voyager background (0.35 opacity blend):
-      //   ~rgb(211, 238, 215) — muted green.
+      // New pastel Good rendered on Outdoors background (0.35 opacity blend):
+      //   muted green blended with warm earthy terrain.
       // Look for pixels that appear to be a greenish AQI color (G dominant, non-trivial saturation).
 
       let foundPastelGreen = false;
@@ -197,15 +196,12 @@ test.describe("AQI color palette", () => {
         const chroma = Math.max(r, g, b) - Math.min(r, g, b);
 
         // Old EPA bright green: very low R, very high G, very low B, extreme saturation.
-        // Threshold: R < 50, G > 200, B < 50 — even at 0.35 opacity on any background,
-        // the green channel would still dominate strongly.
         if (r < 80 && g > 200 && b < 80) {
           foundOldSaturatedGreen = true;
         }
 
         // New pastel Good: G > R > B, moderate chroma (rendered at ~35% opacity → muted).
-        // Look for soft greenish pixels: G is highest channel, moderate R, low-ish B.
-        // Blended on Voyager: R≈200-220, G≈230-245, B≈200-215, chroma≈20-40.
+        // Blended on Outdoors terrain: muted greenish pixel, G channel dominant.
         if (g > r && g > b && r > 180 && g > 215 && chroma > 15 && chroma < 80) {
           foundPastelGreen = true;
         }
@@ -235,10 +231,9 @@ test.describe("AQI color palette", () => {
 });
 
 // ─── label visibility at default zoom ───────────────────────────────────────
-// Catches "wrong default zoom" regression: neighborhood labels (place_hamlet /
-// place_suburbs) only appear at zoom ≥ 12 in CARTO Voyager. If FRESNO_ZOOM
-// regresses to 10, this test fails because those layers are outside their
-// minzoom range at the initial camera position.
+// Catches "wrong default zoom" regression: settlement subdivision labels
+// (neighborhoods/suburbs) only appear at zoom ≥ 12 in Mapbox Outdoors.
+// If FRESNO_ZOOM regresses to 10, this test fails.
 
 test.describe("Label visibility", () => {
   test("neighborhood label layers active at default zoom (≥12)", async ({ page }) => {
@@ -251,8 +246,10 @@ test.describe("Label visibility", () => {
       if (!map) return { error: "no map" };
       const zoom = map.getZoom();
       const layers = map.getStyle().layers;
+      // Mapbox Outdoors v12 uses settlement-subdivision-label for neighborhoods/suburbs
+      // and settlement-minor-label for hamlets/small settlements (Mapbox Streets v8 naming).
       const neighborhoodLayers = layers.filter((l) =>
-        (l.id === "place_hamlet" || l.id === "place_suburbs") &&
+        (l.id === "settlement-subdivision-label" || l.id === "settlement-minor-label") &&
         (l.minzoom ?? 0) <= zoom &&
         (l.maxzoom ?? 24) >= zoom
       );
@@ -279,7 +276,7 @@ test.describe("Label visibility", () => {
 
     expect(
       neighborhoodLayerCount,
-      `No place_hamlet/place_suburbs layers active at zoom ${zoom.toFixed(2)} — basemap may have changed`,
+      `No settlement-subdivision-label/settlement-minor-label layers active at zoom ${zoom.toFixed(2)} — basemap may have changed`,
     ).toBeGreaterThan(0);
   });
 });
@@ -304,7 +301,7 @@ test.describe("Boundary hover", () => {
     console.log(`93727 centroid projects to canvas px: (${pt!.x.toFixed(0)}, ${pt!.y.toFixed(0)})`);
 
     // Translate canvas-relative pixel to page-level coordinates.
-    const canvasRect = await page.locator(".maplibregl-canvas").first().boundingBox();
+    const canvasRect = await page.locator(".mapboxgl-canvas").first().boundingBox();
     expect(canvasRect, "canvas bounding box not found").not.toBeNull();
 
     const pageX = canvasRect!.x + pt!.x;
