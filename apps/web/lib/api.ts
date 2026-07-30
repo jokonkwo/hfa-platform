@@ -1,5 +1,5 @@
 import type { ZipNow, ZipHourly, ZipDaily } from "./types";
-import type { BoundaryCollection, CountyBoundaryCollection } from "@/components/MapView";
+import type { BoundaryCollection, CountyBoundaryCollection, StateBoundaryCollection } from "@/components/MapView";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -77,6 +77,17 @@ export async function fetchZipBoundaries(): Promise<BoundaryCollection | null> {
     const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries`);
     if (!res.ok) return null;
     return (await res.json()) as BoundaryCollection;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch US state boundary polygons. Returns null on any failure (non-critical).
+export async function fetchStateBoundaries(): Promise<StateBoundaryCollection | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/v1/states/boundaries`);
+    if (!res.ok) return null;
+    return (await res.json()) as StateBoundaryCollection;
   } catch {
     return null;
   }

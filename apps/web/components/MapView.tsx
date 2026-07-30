@@ -2,29 +2,18 @@
 
 import "mapbox-gl/dist/mapbox-gl.css";
 import type * as GeoJSON from "geojson";
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import type { ZipNow } from "@/lib/types";
 import { categoryColor, aqiToCategory } from "@/lib/aqi";
-import {
-  ZIP_CENTROIDS,
-  FRESNO_CENTER,
-  FRESNO_ZOOM,
-} from "@/lib/zipCentroids";
+import { ZIP_CENTROIDS, FRESNO_CENTER, FRESNO_ZOOM } from "@/lib/zipCentroids";
 import type { MapTier } from "@/components/TierControl";
 
 const MAPBOX_OUTDOORS_STYLE = "mapbox://styles/mapbox/outdoors-v12";
-
-// California view for county tier
-const CA_CENTER: [number, number] = [-119.5, 37.2]; // [lng, lat]
+const CA_CENTER: [number, number] = [-119.5, 37.2];
 const CA_ZOOM = 5;
-
 const FRESNO_COUNTY_GEOID = "06019";
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 // ── Source / layer IDs ─────────────────────────────────────────────────────
 
@@ -33,17 +22,18 @@ const ZIP_CIRCLE_LAYER = "zip-circles";
 const ZIP_BOUNDARY_SOURCE = "zip-boundaries";
 const ZIP_BOUNDARY_FILL = "zip-boundary-fill";
 const ZIP_BOUNDARY_OUTLINE = "zip-boundary-outline";
-
 const COUNTY_SOURCE = "county-boundaries";
 const COUNTY_FILL = "county-boundary-fill";
 const COUNTY_OUTLINE = "county-boundary-outline";
+const STATE_SOURCE = "state-boundaries";
+const STATE_FILL = "state-boundary-fill";
+const STATE_OUTLINE = "state-boundary-outline";
 
 // ── Exported types ─────────────────────────────────────────────────────────
 
 export interface MapViewHandle {
   flyToZip: (zip: string) => void;
-  flyToFresno: () => void;
-  flyToCA: () => void;
+  ensureVisible: (tier: MapTier) => void;
 }
 
 export type BoundaryCollection = GeoJSON.FeatureCollection<
@@ -56,14 +46,15 @@ export type CountyBoundaryCollection = GeoJSON.FeatureCollection<
   { GEOID: string; NAME: string; NAMELSAD: string }
 >;
 
+export type StateBoundaryCollection = GeoJSON.FeatureCollection<
+  GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  { GEOID: string; NAME: string; STUSPS: string; isCalifornia: boolean }
+>;
+
 // ── GeoJSON builders ───────────────────────────────────────────────────────
 
 type ZipFeatureProps = {
-  zip: string;
-  town: string;
-  aqi: number;
-  category: string;
-  color: string;
+  zip: string; town: string; aqi: number; category: string; color: string;
 };
 
 function buildPointGeoJSON(
@@ -78,10 +69,7 @@ function buildPointGeoJSON(
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
       properties: {
-        zip: row.zip,
-        town: row.town,
-        aqi: row.aqi,
-        category: row.category,
+        zip: row.zip, town: row.town, aqi: row.aqi, category: row.category,
         color: categoryColor(row.category),
       },
     });
@@ -135,18 +123,146 @@ function buildCountyGeoJSON(
             : "#cccccc";
         return {
           ...ft,
-          properties: {
-            geoid,
-            name,
-            namelsad,
-            color,
-            hasData: isFresno ? 1 : 0,
-            avgAqi,
-          },
+          properties: { geoid, name, namelsad, color, hasData: isFresno ? 1 : 0, avgAqi },
         };
       },
     ),
   };
+}
+
+function buildStateGeoJSON(
+  stateBoundaries: StateBoundaryCollection,
+  fresnoAvgAqi: number | null,
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: stateBoundaries.features.map(
+      (ft: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon, { GEOID: string; NAME: string; STUSPS: string; isCalifornia: boolean }>) => {
+        const { GEOID, NAME, STUSPS, isCalifornia } = ft.properties ?? {};
+        const color = isCalifornia
+          ? (fresnoAvgAqi !== null ? categoryColor(aqiToCategory(fresnoAvgAqi)) : "#3B82F6")
+          : "#cccccc";
+        return {
+          ...ft,
+          properties: { geoid: GEOID, name: NAME, stusps: STUSPS, isCalifornia: isCalifornia ?? false, color },
+        };
+      },
+    ),
+  };
+}
+
+// ── Tier styling ───────────────────────────────────────────────────────────
+//
+// All three tiers are rendered simultaneously. The active tier is "primary"
+// (full opacity, interactive). Outer tiers stay visible as context at
+// reduced opacity. Only ZIP/circle layers are fully hidden in non-zip tiers.
+
+function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
+  // ── State layer: always visible, fades as you drill deeper ────────────
+  if (map.getLayer(STATE_FILL)) {
+    const caFill  = tier === "state" ? 0.30 : tier === "county" ? 0.08 : 0.05;
+    const otFill  = tier === "state" ? 0.08 : tier === "county" ? 0.03 : 0.02;
+    const caHover = tier === "state" ? 0.50 : caFill;
+    map.setPaintProperty(STATE_FILL, "fill-opacity", [
+      "case",
+      ["boolean", ["feature-state", "hover"], false], caHover,
+      ["==", ["get", "isCalifornia"], true], caFill,
+      otFill,
+    ] as unknown as number);
+    const caLine  = tier === "state" ? 0.85 : tier === "county" ? 0.30 : 0.15;
+    const otLine  = tier === "state" ? 0.30 : tier === "county" ? 0.10 : 0.08;
+    map.setPaintProperty(STATE_OUTLINE, "line-opacity", [
+      "case",
+      ["==", ["get", "isCalifornia"], true], caLine,
+      otLine,
+    ] as unknown as number);
+    map.setPaintProperty(STATE_OUTLINE, "line-width", [
+      "case",
+      ["==", ["get", "isCalifornia"], true],
+      tier === "state" ? 1.8 : 0.8,
+      tier === "state" ? 1.0 : 0.5,
+    ] as unknown as number);
+  }
+
+  // ── County layer: hidden in state tier; primary in county; context in zip
+  if (map.getLayer(COUNTY_FILL)) {
+    const countyVisible = tier !== "state";
+    map.setLayoutProperty(COUNTY_FILL,    "visibility", countyVisible ? "visible" : "none");
+    map.setLayoutProperty(COUNTY_OUTLINE, "visibility", countyVisible ? "visible" : "none");
+    if (countyVisible) {
+      if (tier === "county") {
+        map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 0.65,
+          ["==", ["get", "hasData"], 1], 0.40,
+          0.10,
+        ] as unknown as number);
+        map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
+          "case", ["==", ["get", "hasData"], 1], 0.9, 0.30,
+        ] as unknown as number);
+        map.setPaintProperty(COUNTY_OUTLINE, "line-width", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 3.0, 1.8,
+        ] as unknown as number);
+      } else {
+        // zip tier — county is secondary context
+        map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
+          "case", ["==", ["get", "hasData"], 1], 0.10, 0.04,
+        ] as unknown as number);
+        map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
+          "case", ["==", ["get", "hasData"], 1], 0.40, 0.18,
+        ] as unknown as number);
+        map.setPaintProperty(COUNTY_OUTLINE, "line-width", 1.2);
+      }
+    }
+  }
+
+  // ── ZIP layer + circles: only in zip tier ─────────────────────────────
+  const zipVisible = tier === "zip";
+  if (map.getLayer(ZIP_BOUNDARY_FILL)) {
+    map.setLayoutProperty(ZIP_BOUNDARY_FILL,    "visibility", zipVisible ? "visible" : "none");
+    map.setLayoutProperty(ZIP_BOUNDARY_OUTLINE, "visibility", zipVisible ? "visible" : "none");
+    if (zipVisible) {
+      map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], 0.60,
+        ["==", ["get", "hasData"], 1], 0.35,
+        0.18,
+      ] as unknown as number);
+      map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
+        "case", ["==", ["get", "hasData"], 1], 0.90, 0.55,
+      ] as unknown as number);
+    }
+  }
+  if (map.getLayer(ZIP_CIRCLE_LAYER)) {
+    map.setLayoutProperty(ZIP_CIRCLE_LAYER, "visibility", zipVisible ? "visible" : "none");
+  }
+}
+
+// ── Tooltip HTML helpers ───────────────────────────────────────────────────
+
+function stateTooltipHtml(name: string, isCalifornia: boolean, fresnoAvgAqi: number | null): string {
+  if (isCalifornia) {
+    const aqiLine = fresnoAvgAqi !== null
+      ? `<br/><span style="font-weight:600">Avg AQI ${fresnoAvgAqi}</span><span style="color:#6b7280"> across pilot ZIPs</span><br/><span style="font-size:11px;color:#2563eb">Click to explore counties →</span>`
+      : `<br/><span style="color:#9ca3af">Air quality data available</span><br/><span style="font-size:11px;color:#2563eb">Click to explore counties →</span>`;
+    return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span>${aqiLine}</div>`;
+  }
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span><br/><span style="color:#9ca3af">No program data</span></div>`;
+}
+
+function countyTooltipHtml(namelsad: string, hasData: number, avgAqi: number | null): string {
+  if (hasData) {
+    return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span><br/><span style="font-weight:600">Avg AQI ${avgAqi ?? "—"}</span><span style="color:#6b7280"> across pilot ZIPs</span><br/><span style="font-size:11px;color:#2563eb">Click to explore ZIPs →</span></div>`;
+  }
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span><br/><span style="color:#9ca3af">No sensor data yet</span></div>`;
+}
+
+function zipTooltipHtml(zip: string, town: string | null, hasData: number, aqi: number | null, category: string | null): string {
+  if (hasData) {
+    return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${zip}</span><span style="color:#6b7280;margin-left:4px">${town ?? ""}</span><br/><span style="font-weight:600">AQI ${aqi}</span><span style="color:#6b7280"> · ${category ?? ""}</span></div>`;
+  }
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${zip}</span><br/><span style="color:#9ca3af">No sensor data</span></div>`;
 }
 
 // ── MapView ────────────────────────────────────────────────────────────────
@@ -155,34 +271,16 @@ interface MapViewProps {
   data: ZipNow[];
   boundaries: BoundaryCollection | null;
   countyBoundaries: CountyBoundaryCollection | null;
+  stateBoundaries: StateBoundaryCollection | null;
   tier: MapTier;
   fresnoAvgAqi: number | null;
   onSelectZip: (zip: string) => void;
   onCountyClick: (geoid: string) => void;
-}
-
-function setLayerVisibility(
-  map: mapboxgl.Map,
-  layerId: string,
-  visible: boolean,
-) {
-  if (map.getLayer(layerId)) {
-    map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
-  }
-}
-
-function applyTierVisibility(map: mapboxgl.Map, tier: MapTier) {
-  const zipVisible = tier === "zip";
-  const countyVisible = tier === "county";
-  setLayerVisibility(map, ZIP_CIRCLE_LAYER, zipVisible);
-  setLayerVisibility(map, ZIP_BOUNDARY_FILL, zipVisible);
-  setLayerVisibility(map, ZIP_BOUNDARY_OUTLINE, zipVisible);
-  setLayerVisibility(map, COUNTY_FILL, countyVisible);
-  setLayerVisibility(map, COUNTY_OUTLINE, countyVisible);
+  onStateClick: (geoid: string) => void;
 }
 
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
-  { data, boundaries, countyBoundaries, tier, fresnoAvgAqi, onSelectZip, onCountyClick },
+  { data, boundaries, countyBoundaries, stateBoundaries, tier, fresnoAvgAqi, onSelectZip, onCountyClick, onStateClick },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -190,21 +288,31 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const readyRef = useRef(false);
+
   const dataRef = useRef<ZipNow[]>(data);
   const boundariesRef = useRef<BoundaryCollection | null>(boundaries);
   const countyBoundariesRef = useRef<CountyBoundaryCollection | null>(countyBoundaries);
+  const stateBoundariesRef = useRef<StateBoundaryCollection | null>(stateBoundaries);
   const tierRef = useRef<MapTier>(tier);
   const fresnoAvgAqiRef = useRef<number | null>(fresnoAvgAqi);
   const onSelectRef = useRef(onSelectZip);
   const onCountyClickRef = useRef(onCountyClick);
+  const onStateClickRef = useRef(onStateClick);
+
+  // Hover ID refs — cleared on tier change so stale hover state doesn't persist.
+  const hoveredStateIdRef = useRef<string | number | undefined>(undefined);
+  const hoveredCountyIdRef = useRef<string | number | undefined>(undefined);
+  const hoveredZipIdRef = useRef<string | number | undefined>(undefined);
 
   dataRef.current = data;
   boundariesRef.current = boundaries;
   countyBoundariesRef.current = countyBoundaries;
+  stateBoundariesRef.current = stateBoundaries;
   tierRef.current = tier;
   fresnoAvgAqiRef.current = fresnoAvgAqi;
   onSelectRef.current = onSelectZip;
   onCountyClickRef.current = onCountyClick;
+  onStateClickRef.current = onStateClick;
 
   useImperativeHandle(ref, () => ({
     flyToZip(zip: string) {
@@ -214,317 +322,75 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       const [lat, lon] = centroid;
       map.flyTo({ center: [lon, lat], zoom: 12, duration: 450 });
     },
-    flyToFresno() {
-      mapRef.current?.flyTo({ center: FRESNO_CENTER, zoom: FRESNO_ZOOM, duration: 600 });
-    },
-    flyToCA() {
-      mapRef.current?.flyTo({ center: CA_CENTER, zoom: CA_ZOOM, duration: 700 });
+    ensureVisible(newTier: MapTier) {
+      const map = mapRef.current;
+      if (!map) return;
+      const canvas = map.getCanvas();
+      const margin = 80;
+
+      if (newTier === "zip") {
+        // Pan to Fresno only if it's outside the viewport.
+        const pt = map.project(FRESNO_CENTER as [number, number]);
+        const outOfView =
+          pt.x < margin || pt.x > canvas.width - margin ||
+          pt.y < margin || pt.y > canvas.height - margin;
+        if (outOfView) {
+          map.flyTo({ center: FRESNO_CENTER as [number, number], zoom: Math.max(map.getZoom(), FRESNO_ZOOM), duration: 500 });
+        }
+      } else if (newTier === "county" || newTier === "state") {
+        // Pan to CA only if it's entirely outside the viewport.
+        const pt = map.project(CA_CENTER);
+        const outOfView =
+          pt.x < margin || pt.x > canvas.width - margin ||
+          pt.y < margin || pt.y > canvas.height - margin;
+        if (outOfView) {
+          map.flyTo({ center: CA_CENTER, zoom: CA_ZOOM, duration: 500 });
+        }
+      }
     },
   }));
 
-  // ── County layer management ──────────────────────────────────────────────
-
-  const syncCountyBoundaries = () => {
-    const map = mapRef.current;
-    if (!map || !readyRef.current) return;
-    const bounds = countyBoundariesRef.current;
-    if (!bounds) return;
-    const countyData = buildCountyGeoJSON(bounds, fresnoAvgAqiRef.current);
-
-    const src = map.getSource(COUNTY_SOURCE) as mapboxgl.GeoJSONSource | undefined;
-    if (src) {
-      src.setData(countyData);
-      return;
-    }
-
-    // First time — add source + layers
-    map.addSource(COUNTY_SOURCE, {
-      type: "geojson",
-      data: countyData,
-      generateId: true,
-    });
-
-    map.addLayer(
-      {
-        id: COUNTY_FILL,
-        type: "fill",
-        source: COUNTY_SOURCE,
-        paint: {
-          "fill-color": ["get", "color"],
-          "fill-opacity": [
-            "case",
-            ["boolean", ["feature-state", "hover"], false],
-            0.65,
-            ["==", ["get", "hasData"], 1],
-            0.4,
-            0.1,
-          ],
-        },
-        layout: { visibility: tierRef.current === "county" ? "visible" : "none" },
-      },
-      ZIP_CIRCLE_LAYER,
-    );
-    map.addLayer(
-      {
-        id: COUNTY_OUTLINE,
-        type: "line",
-        source: COUNTY_SOURCE,
-        paint: {
-          "line-color": "#111111",
-          "line-width": [
-            "case",
-            ["boolean", ["feature-state", "hover"], false],
-            3.0,
-            1.8,
-          ],
-          "line-opacity": [
-            "case",
-            ["==", ["get", "hasData"], 1],
-            0.9,
-            0.3,
-          ],
-        },
-        layout: { visibility: tierRef.current === "county" ? "visible" : "none" },
-      },
-      ZIP_CIRCLE_LAYER,
-    );
-
-    // Hover state
-    let hoveredCountyId: string | number | undefined;
-    const tooltip = tooltipRef.current;
-
-    map.on("mousemove", COUNTY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
-      const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
-      if (!feature || feature.id == null) return;
-      const featureId = feature.id as string | number;
-
-      if (hoveredCountyId !== undefined && hoveredCountyId !== featureId) {
-        map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyId }, { hover: false });
-      }
-      hoveredCountyId = featureId;
-      map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyId }, { hover: true });
-      map.getCanvas().style.cursor = "pointer";
-
-      const props = (feature as mapboxgl.GeoJSONFeature & {
-        properties: {
-          geoid: string;
-          name: string;
-          namelsad: string;
-          hasData: number;
-          avgAqi: number | null;
-        };
-      }).properties;
-
-      if (tooltip) {
-        const pt = e.point;
-        tooltip.style.display = "block";
-        tooltip.style.left = `${pt.x + 14}px`;
-        tooltip.style.top = `${pt.y - 12}px`;
-        if (props?.hasData) {
-          tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.namelsad}</span><br/><span style="font-weight:600">Avg AQI ${props.avgAqi ?? "—"}</span><span style="color:#6b7280"> across pilot ZIPs</span><br/><span style="font-size:11px;color:#2563eb">Click to explore ZIPs →</span></div>`;
-        } else {
-          tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.namelsad}</span><br/><span style="color:#9ca3af">No sensor data yet</span></div>`;
-        }
-      }
-
-      type HoverWin = Window & typeof globalThis & { __hfaHoveredCounty?: string };
-      (window as HoverWin).__hfaHoveredCounty = props?.name;
-    });
-
-    map.on("mouseleave", COUNTY_FILL, () => {
-      if (hoveredCountyId !== undefined) {
-        map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyId }, { hover: false });
-        hoveredCountyId = undefined;
-      }
-      map.getCanvas().style.cursor = "";
-      if (tooltip) tooltip.style.display = "none";
-      type HoverWin = Window & typeof globalThis & { __hfaHoveredCounty?: string };
-      (window as HoverWin).__hfaHoveredCounty = undefined;
-    });
-
-    map.on("click", COUNTY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
-      const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
-      if (!feature) return;
-      const props = (feature as mapboxgl.GeoJSONFeature & {
-        properties: { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null };
-      }).properties;
-
-      popupRef.current?.remove();
-
-      if (props?.hasData) {
-        // Fresno county → delegate to page.tsx to switch tier
-        onCountyClickRef.current(props.geoid);
-      } else {
-        // Other county → show no-data popup at click location
-        const html = `
-          <div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:180px;">
-            <div style="font-size:15px;font-weight:700;">${props.namelsad}</div>
-            <div style="font-size:12px;color:#4b5563;margin-top:4px;">No sensor data available yet.</div>
-            <div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4;">Fresno County is the current pilot area. Other CA counties will be added as the program expands.</div>
-          </div>`;
-        popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
-          .setLngLat(e.lngLat)
-          .setHTML(html)
-          .addTo(map);
-      }
-    });
-
-    // Signal for test automation
-    type BoundaryWindow = Window & typeof globalThis & { __hfaCountyBoundariesLoaded?: boolean };
-    (window as BoundaryWindow).__hfaCountyBoundariesLoaded = true;
-  };
-
-  // ── ZIP layer management ─────────────────────────────────────────────────
+  // ── Sync functions: just setData; layers are added at map load ───────────
 
   const syncPoints = () => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
-    const src = map.getSource(ZIP_CIRCLE_SOURCE) as mapboxgl.GeoJSONSource | undefined;
-    if (src) src.setData(buildPointGeoJSON(dataRef.current));
+    (map.getSource(ZIP_CIRCLE_SOURCE) as mapboxgl.GeoJSONSource)
+      ?.setData(buildPointGeoJSON(dataRef.current));
   };
 
   const syncZipBoundaries = () => {
     const map = mapRef.current;
-    if (!map || !readyRef.current) return;
-    const bounds = boundariesRef.current;
-    if (!bounds) return;
-    const boundaryData = buildZipBoundaryGeoJSON(bounds, dataRef.current);
-
-    // Signal that zip_now data has been applied to the map (at least one ZIP has data).
+    if (!map || !readyRef.current || !boundariesRef.current) return;
+    (map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource)
+      ?.setData(buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current));
     if (dataRef.current.length > 0) {
       type ZipNowWin = Window & typeof globalThis & { __hfaZipNowLoaded?: boolean };
       (window as ZipNowWin).__hfaZipNowLoaded = true;
     }
-
-    const src = map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource | undefined;
-    if (src) {
-      src.setData(boundaryData);
-      return;
-    }
-
-    map.addSource(ZIP_BOUNDARY_SOURCE, {
-      type: "geojson",
-      data: boundaryData,
-      generateId: true,
-    });
-    type BoundaryWindow = Window & typeof globalThis & { __hfaBoundariesLoaded?: boolean };
-    (window as BoundaryWindow).__hfaBoundariesLoaded = true;
-
-    map.addLayer(
-      {
-        id: ZIP_BOUNDARY_FILL,
-        type: "fill",
-        source: ZIP_BOUNDARY_SOURCE,
-        paint: {
-          "fill-color": ["get", "color"],
-          "fill-opacity": [
-            "case",
-            ["boolean", ["feature-state", "hover"], false],
-            0.6,
-            ["==", ["get", "hasData"], 1],
-            0.35,
-            0.18,
-          ],
-        },
-        layout: { visibility: tierRef.current === "zip" ? "visible" : "none" },
-      },
-      ZIP_CIRCLE_LAYER,
-    );
-    map.addLayer(
-      {
-        id: ZIP_BOUNDARY_OUTLINE,
-        type: "line",
-        source: ZIP_BOUNDARY_SOURCE,
-        paint: {
-          "line-color": "#111111",
-          "line-width": [
-            "case",
-            ["boolean", ["feature-state", "hover"], false],
-            3.5,
-            2.5,
-          ],
-          "line-opacity": [
-            "case",
-            ["==", ["get", "hasData"], 1],
-            0.9,
-            0.55,
-          ],
-        },
-        layout: { visibility: tierRef.current === "zip" ? "visible" : "none" },
-      },
-      ZIP_CIRCLE_LAYER,
-    );
-
-    let hoveredFeatureId: string | number | undefined;
-    const tooltip = tooltipRef.current;
-    type HoverWindow = Window & typeof globalThis & { __hfaHoveredZip?: string };
-
-    map.on("mousemove", ZIP_BOUNDARY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
-      const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
-      if (!feature || feature.id == null) return;
-      const featureId = feature.id as string | number;
-      if (hoveredFeatureId !== undefined && hoveredFeatureId !== featureId) {
-        map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredFeatureId }, { hover: false });
-      }
-      hoveredFeatureId = featureId;
-      map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredFeatureId }, { hover: true });
-      map.getCanvas().style.cursor = "pointer";
-
-      const props = (feature as mapboxgl.GeoJSONFeature & {
-        properties: { zip: string; town: string; aqi: number | null; category: string | null; hasData: number };
-      }).properties;
-
-      if (tooltip && props) {
-        const pt = e.point;
-        tooltip.style.display = "block";
-        tooltip.style.left = `${pt.x + 14}px`;
-        tooltip.style.top = `${pt.y - 12}px`;
-        if (props.hasData) {
-          tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.zip}</span><span style="color:#6b7280;margin-left:4px">${props.town ?? ""}</span><br/><span style="font-weight:600">AQI ${props.aqi}</span><span style="color:#6b7280"> · ${props.category ?? ""}</span></div>`;
-        } else {
-          tooltip.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${props.zip}</span><br/><span style="color:#9ca3af">No sensor data</span></div>`;
-        }
-      }
-      (window as HoverWindow).__hfaHoveredZip = props?.zip ?? undefined;
-    });
-
-    map.on("mouseleave", ZIP_BOUNDARY_FILL, () => {
-      if (hoveredFeatureId !== undefined) {
-        map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredFeatureId }, { hover: false });
-        hoveredFeatureId = undefined;
-      }
-      map.getCanvas().style.cursor = "";
-      if (tooltip) tooltip.style.display = "none";
-      (window as HoverWindow).__hfaHoveredZip = undefined;
-    });
-
-    map.on("click", ZIP_BOUNDARY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
-      const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
-      if (!feature) return;
-      const props = (feature as mapboxgl.GeoJSONFeature & {
-        properties: { zip: string; town: string; aqi: number; category: string; hasData: number };
-      }).properties;
-      if (!props?.hasData) return;
-      const centroid = ZIP_CENTROIDS[props.zip];
-      const lngLat = centroid ? ([centroid[1], centroid[0]] as [number, number]) : e.lngLat;
-
-      popupRef.current?.remove();
-      const html = `
-        <div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:150px;">
-          <div style="font-size:15px;font-weight:700;">${props.zip}</div>
-          <div style="font-size:12px;color:#4b5563;margin-bottom:6px;">${props.town ?? ""}</div>
-          <div style="font-size:13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
-          <div style="font-size:11px;color:#2563eb;margin-top:6px;">Click for details →</div>
-        </div>`;
-      popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
-        .setLngLat(lngLat)
-        .setHTML(html)
-        .addTo(map);
-      onSelectRef.current(props.zip);
-    });
+    type BoundaryWin = Window & typeof globalThis & { __hfaBoundariesLoaded?: boolean };
+    (window as BoundaryWin).__hfaBoundariesLoaded = true;
   };
 
-  // ── Map initialisation ───────────────────────────────────────────────────
+  const syncCountyBoundaries = () => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current || !countyBoundariesRef.current) return;
+    (map.getSource(COUNTY_SOURCE) as mapboxgl.GeoJSONSource)
+      ?.setData(buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current));
+    type BoundaryWin = Window & typeof globalThis & { __hfaCountyBoundariesLoaded?: boolean };
+    (window as BoundaryWin).__hfaCountyBoundariesLoaded = true;
+  };
+
+  const syncStateBoundaries = () => {
+    const map = mapRef.current;
+    if (!map || !readyRef.current || !stateBoundariesRef.current) return;
+    (map.getSource(STATE_SOURCE) as mapboxgl.GeoJSONSource)
+      ?.setData(buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current));
+    type StateWin = Window & typeof globalThis & { __hfaStateBoundariesLoaded?: boolean };
+    (window as StateWin).__hfaStateBoundariesLoaded = true;
+  };
+
+  // ── Map initialisation ────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -533,23 +399,17 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     let ro: ResizeObserver | null = null;
 
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) {
-      throw new Error("[HFA] NEXT_PUBLIC_MAPBOX_TOKEN is not set.");
-    }
+    if (!token) throw new Error("[HFA] NEXT_PUBLIC_MAPBOX_TOKEN is not set.");
 
     const rafId = requestAnimationFrame(() => {
       if (isDestroyed || mapRef.current) return;
-
-      // Start at CA view when default tier is county
-      const initCenter = tierRef.current === "county" ? CA_CENTER : FRESNO_CENTER;
-      const initZoom = tierRef.current === "county" ? CA_ZOOM : FRESNO_ZOOM;
 
       const map = new mapboxgl.Map({
         accessToken: token,
         container,
         style: MAPBOX_OUTDOORS_STYLE,
-        center: initCenter,
-        zoom: initZoom,
+        center: CA_CENTER,
+        zoom: CA_ZOOM,
         attributionControl: true,
         preserveDrawingBuffer: true,
       });
@@ -567,26 +427,32 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       ro.observe(container);
 
       map.on("load", () => {
-        type TestWindow = Window & typeof globalThis & {
-          __hfaMapLoaded?: boolean;
-          __hfaMap?: mapboxgl.Map;
-          __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number };
-          __hfaTier?: MapTier;
-        };
-        const tw = window as TestWindow;
-        tw.__hfaMapLoaded = true;
-        tw.__hfaMap = map;
-        tw.__hfaProjectLngLat = (lng, lat) => map.project([lng, lat]);
-        tw.__hfaTier = tierRef.current;
+        // ── Add all sources (empty; populated by sync* functions) ───────
+        map.addSource(STATE_SOURCE, { type: "geojson", data: EMPTY_FC, generateId: true });
+        map.addSource(COUNTY_SOURCE, { type: "geojson", data: EMPTY_FC, generateId: true });
+        map.addSource(ZIP_BOUNDARY_SOURCE, { type: "geojson", data: EMPTY_FC, generateId: true });
+        map.addSource(ZIP_CIRCLE_SOURCE, { type: "geojson", data: buildPointGeoJSON([]) });
 
-        map.addSource(ZIP_CIRCLE_SOURCE, {
-          type: "geojson",
-          data: buildPointGeoJSON(dataRef.current),
+        // ── Add layers bottom → top (z-order is fixed from the start) ──
+        map.addLayer({ id: STATE_FILL, type: "fill", source: STATE_SOURCE,
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.08 },
         });
-        map.addLayer({
-          id: ZIP_CIRCLE_LAYER,
-          type: "circle",
-          source: ZIP_CIRCLE_SOURCE,
+        map.addLayer({ id: STATE_OUTLINE, type: "line", source: STATE_SOURCE,
+          paint: { "line-color": "#444444", "line-width": 1.0, "line-opacity": 0.30 },
+        });
+        map.addLayer({ id: COUNTY_FILL, type: "fill", source: COUNTY_SOURCE,
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.10 },
+        });
+        map.addLayer({ id: COUNTY_OUTLINE, type: "line", source: COUNTY_SOURCE,
+          paint: { "line-color": "#111111", "line-width": 1.8, "line-opacity": 0.30 },
+        });
+        map.addLayer({ id: ZIP_BOUNDARY_FILL, type: "fill", source: ZIP_BOUNDARY_SOURCE,
+          paint: { "fill-color": ["get", "color"], "fill-opacity": 0.35 },
+        });
+        map.addLayer({ id: ZIP_BOUNDARY_OUTLINE, type: "line", source: ZIP_BOUNDARY_SOURCE,
+          paint: { "line-color": "#111111", "line-width": 2.5, "line-opacity": 0.90 },
+        });
+        map.addLayer({ id: ZIP_CIRCLE_LAYER, type: "circle", source: ZIP_CIRCLE_SOURCE,
           paint: {
             "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 6, 12, 10],
             "circle-color": ["get", "color"],
@@ -594,39 +460,203 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             "circle-stroke-width": 1.5,
             "circle-stroke-color": "#ffffff",
           },
-          layout: { visibility: tierRef.current === "zip" ? "visible" : "none" },
         });
+
+        // Apply correct styling for the default tier
+        applyTierStyling(map, tierRef.current);
         readyRef.current = true;
 
+        // ── Set up test globals ─────────────────────────────────────────
+        type TestWin = Window & typeof globalThis & {
+          __hfaMapLoaded?: boolean;
+          __hfaMap?: mapboxgl.Map;
+          __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number };
+          __hfaTier?: MapTier;
+        };
+        const tw = window as TestWin;
+        tw.__hfaMapLoaded = true;
+        tw.__hfaMap = map;
+        tw.__hfaProjectLngLat = (lng, lat) => map.project([lng, lat]);
+        tw.__hfaTier = tierRef.current;
+
+        // ── Event handlers ──────────────────────────────────────────────
+        const tooltip = tooltipRef.current;
+
+        // State layer
+        map.on("mousemove", STATE_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
+          if (tierRef.current !== "state") return;
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+          if (!feature || feature.id == null) return;
+          const fid = feature.id as string | number;
+          if (hoveredStateIdRef.current !== undefined && hoveredStateIdRef.current !== fid) {
+            map.setFeatureState({ source: STATE_SOURCE, id: hoveredStateIdRef.current }, { hover: false });
+          }
+          hoveredStateIdRef.current = fid;
+          map.setFeatureState({ source: STATE_SOURCE, id: fid }, { hover: true });
+          map.getCanvas().style.cursor = "pointer";
+          const props = (feature.properties ?? {}) as { name: string; isCalifornia: boolean };
+          if (tooltip) {
+            const pt = e.point;
+            tooltip.style.display = "block";
+            tooltip.style.left = `${pt.x + 14}px`;
+            tooltip.style.top = `${pt.y - 12}px`;
+            tooltip.innerHTML = stateTooltipHtml(props.name, props.isCalifornia, fresnoAvgAqiRef.current);
+          }
+          type HoverWin = Window & typeof globalThis & { __hfaHoveredState?: string };
+          (window as HoverWin).__hfaHoveredState = props.name;
+        });
+
+        map.on("mouseleave", STATE_FILL, () => {
+          if (hoveredStateIdRef.current !== undefined) {
+            map.setFeatureState({ source: STATE_SOURCE, id: hoveredStateIdRef.current }, { hover: false });
+            hoveredStateIdRef.current = undefined;
+          }
+          if (tierRef.current === "state") {
+            map.getCanvas().style.cursor = "";
+            if (tooltip) tooltip.style.display = "none";
+          }
+          type HoverWin = Window & typeof globalThis & { __hfaHoveredState?: string };
+          (window as HoverWin).__hfaHoveredState = undefined;
+        });
+
+        map.on("click", STATE_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
+          if (tierRef.current !== "state") return;
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+          if (!feature) return;
+          const props = (feature.properties ?? {}) as { geoid: string; name: string; isCalifornia: boolean };
+          popupRef.current?.remove();
+          if (props.isCalifornia) {
+            onStateClickRef.current(props.geoid ?? "06");
+          } else {
+            const html = `<div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:160px;"><div style="font-size:15px;font-weight:700;">${props.name}</div><div style="font-size:12px;color:#4b5563;margin-top:4px;">No program coverage yet.</div><div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4;">California is the current pilot state.</div></div>`;
+            popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
+              .setLngLat(e.lngLat).setHTML(html).addTo(map);
+          }
+        });
+
+        // County layer
+        map.on("mousemove", COUNTY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
+          if (tierRef.current !== "county") return;
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+          if (!feature || feature.id == null) return;
+          const fid = feature.id as string | number;
+          if (hoveredCountyIdRef.current !== undefined && hoveredCountyIdRef.current !== fid) {
+            map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyIdRef.current }, { hover: false });
+          }
+          hoveredCountyIdRef.current = fid;
+          map.setFeatureState({ source: COUNTY_SOURCE, id: fid }, { hover: true });
+          map.getCanvas().style.cursor = "pointer";
+          const props = (feature.properties ?? {}) as { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null };
+          if (tooltip) {
+            const pt = e.point;
+            tooltip.style.display = "block";
+            tooltip.style.left = `${pt.x + 14}px`;
+            tooltip.style.top = `${pt.y - 12}px`;
+            tooltip.innerHTML = countyTooltipHtml(props.namelsad, props.hasData, props.avgAqi);
+          }
+          type HoverWin = Window & typeof globalThis & { __hfaHoveredCounty?: string };
+          (window as HoverWin).__hfaHoveredCounty = props.name;
+        });
+
+        map.on("mouseleave", COUNTY_FILL, () => {
+          if (hoveredCountyIdRef.current !== undefined) {
+            map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyIdRef.current }, { hover: false });
+            hoveredCountyIdRef.current = undefined;
+          }
+          if (tierRef.current === "county") {
+            map.getCanvas().style.cursor = "";
+            if (tooltip) tooltip.style.display = "none";
+          }
+          type HoverWin = Window & typeof globalThis & { __hfaHoveredCounty?: string };
+          (window as HoverWin).__hfaHoveredCounty = undefined;
+        });
+
+        map.on("click", COUNTY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
+          if (tierRef.current !== "county") return;
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+          if (!feature) return;
+          const props = (feature.properties ?? {}) as { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null };
+          popupRef.current?.remove();
+          if (props.hasData) {
+            onCountyClickRef.current(props.geoid);
+          } else {
+            const html = `<div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:180px;"><div style="font-size:15px;font-weight:700;">${props.namelsad}</div><div style="font-size:12px;color:#4b5563;margin-top:4px;">No sensor data available yet.</div><div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4;">Fresno County is the current pilot area. Other CA counties will be added as the program expands.</div></div>`;
+            popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
+              .setLngLat(e.lngLat).setHTML(html).addTo(map);
+          }
+        });
+
+        // ZIP boundary layer
+        map.on("mousemove", ZIP_BOUNDARY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
+          if (tierRef.current !== "zip") return;
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+          if (!feature || feature.id == null) return;
+          const fid = feature.id as string | number;
+          if (hoveredZipIdRef.current !== undefined && hoveredZipIdRef.current !== fid) {
+            map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredZipIdRef.current }, { hover: false });
+          }
+          hoveredZipIdRef.current = fid;
+          map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: fid }, { hover: true });
+          map.getCanvas().style.cursor = "pointer";
+          const props = (feature.properties ?? {}) as { zip: string; town: string | null; aqi: number | null; category: string | null; hasData: number };
+          if (tooltip) {
+            const pt = e.point;
+            tooltip.style.display = "block";
+            tooltip.style.left = `${pt.x + 14}px`;
+            tooltip.style.top = `${pt.y - 12}px`;
+            tooltip.innerHTML = zipTooltipHtml(props.zip, props.town, props.hasData, props.aqi, props.category);
+          }
+          type HoverWin = Window & typeof globalThis & { __hfaHoveredZip?: string };
+          (window as HoverWin).__hfaHoveredZip = props.zip ?? undefined;
+        });
+
+        map.on("mouseleave", ZIP_BOUNDARY_FILL, () => {
+          if (hoveredZipIdRef.current !== undefined) {
+            map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredZipIdRef.current }, { hover: false });
+            hoveredZipIdRef.current = undefined;
+          }
+          map.getCanvas().style.cursor = "";
+          if (tooltip) tooltip.style.display = "none";
+          type HoverWin = Window & typeof globalThis & { __hfaHoveredZip?: string };
+          (window as HoverWin).__hfaHoveredZip = undefined;
+        });
+
+        map.on("click", ZIP_BOUNDARY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
+          const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
+          if (!feature) return;
+          const props = (feature.properties ?? {}) as { zip: string; town: string; aqi: number; category: string; hasData: number };
+          if (!props.hasData) return;
+          const centroid = ZIP_CENTROIDS[props.zip];
+          const lngLat = centroid ? ([centroid[1], centroid[0]] as [number, number]) : e.lngLat;
+          popupRef.current?.remove();
+          const html = `<div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:150px;"><div style="font-size:15px;font-weight:700;">${props.zip}</div><div style="font-size:12px;color:#4b5563;margin-bottom:6px;">${props.town ?? ""}</div><div style="font-size:13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div><div style="font-size:11px;color:#2563eb;margin-top:6px;">Click for details →</div></div>`;
+          popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
+            .setLngLat(lngLat).setHTML(html).addTo(map);
+          onSelectRef.current(props.zip);
+        });
+
+        // ZIP circle layer
         map.on("mouseenter", ZIP_CIRCLE_LAYER, () => { map.getCanvas().style.cursor = "pointer"; });
         map.on("mouseleave", ZIP_CIRCLE_LAYER, () => { map.getCanvas().style.cursor = ""; });
-
         map.on("click", ZIP_CIRCLE_LAYER, (e: mapboxgl.MapLayerMouseEvent) => {
           const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature) return;
           const props = feature.properties as ZipFeatureProps;
-          const zip = props.zip;
-          const centroid = ZIP_CENTROIDS[zip];
+          const centroid = ZIP_CENTROIDS[props.zip];
           if (!centroid) return;
           const [lat, lon] = centroid;
-
           popupRef.current?.remove();
-          const html = `
-            <div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:150px;">
-              <div style="font-size:15px;font-weight:700;">${props.zip}</div>
-              <div style="font-size:12px;color:#4b5563;margin-bottom:6px;">${props.town ?? ""}</div>
-              <div style="font-size:13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div>
-              <div style="font-size:11px;color:#2563eb;margin-top:6px;">Click for details →</div>
-            </div>`;
+          const html = `<div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:150px;"><div style="font-size:15px;font-weight:700;">${props.zip}</div><div style="font-size:12px;color:#4b5563;margin-bottom:6px;">${props.town ?? ""}</div><div style="font-size:13px;"><b>AQI ${props.aqi}</b> · ${props.category}</div><div style="font-size:11px;color:#2563eb;margin-top:6px;">Click for details →</div></div>`;
           popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
-            .setLngLat([lon, lat])
-            .setHTML(html)
-            .addTo(map);
-          onSelectRef.current(zip);
+            .setLngLat([lon, lat]).setHTML(html).addTo(map);
+          onSelectRef.current(props.zip);
         });
 
-        if (boundariesRef.current) syncZipBoundaries();
+        // ── Populate with data that arrived before map was ready ────────
+        syncPoints();
+        if (stateBoundariesRef.current) syncStateBoundaries();
         if (countyBoundariesRef.current) syncCountyBoundaries();
+        if (boundariesRef.current) syncZipBoundaries();
       });
     });
 
@@ -636,16 +666,24 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       ro?.disconnect();
       tooltipRef.current?.remove();
       tooltipRef.current = null;
-      type CleanWindow = Window & typeof globalThis & {
-        __hfaProjectLngLat?: unknown;
-        __hfaMap?: unknown;
-        __hfaTier?: unknown;
-        __hfaZipNowLoaded?: unknown;
+      type CleanWin = Window & typeof globalThis & {
+        __hfaProjectLngLat?: unknown; __hfaMap?: unknown;
+        __hfaTier?: unknown; __hfaZipNowLoaded?: unknown;
+        __hfaBoundariesLoaded?: unknown; __hfaCountyBoundariesLoaded?: unknown;
+        __hfaStateBoundariesLoaded?: unknown;
+        __hfaHoveredState?: unknown; __hfaHoveredCounty?: unknown; __hfaHoveredZip?: unknown;
       };
-      (window as CleanWindow).__hfaProjectLngLat = undefined;
-      (window as CleanWindow).__hfaMap = undefined;
-      (window as CleanWindow).__hfaTier = undefined;
-      (window as CleanWindow).__hfaZipNowLoaded = undefined;
+      const cw = window as CleanWin;
+      cw.__hfaProjectLngLat = undefined;
+      cw.__hfaMap = undefined;
+      cw.__hfaTier = undefined;
+      cw.__hfaZipNowLoaded = undefined;
+      cw.__hfaBoundariesLoaded = undefined;
+      cw.__hfaCountyBoundariesLoaded = undefined;
+      cw.__hfaStateBoundariesLoaded = undefined;
+      cw.__hfaHoveredState = undefined;
+      cw.__hfaHoveredCounty = undefined;
+      cw.__hfaHoveredZip = undefined;
       popupRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
@@ -654,44 +692,63 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync ZIP data on change
+  // ── Sync ZIP data on change ─────────────────────────────────────────────
   useEffect(() => {
     syncPoints();
     if (boundariesRef.current) syncZipBoundaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // Sync ZIP boundaries when they arrive
+  // ── Sync boundaries when they arrive ───────────────────────────────────
   useEffect(() => {
     if (boundaries) syncZipBoundaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boundaries]);
 
-  // Sync county boundaries when they arrive
   useEffect(() => {
     if (countyBoundaries) syncCountyBoundaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countyBoundaries]);
 
-  // Update county data when fresnoAvgAqi changes (data has loaded)
+  useEffect(() => {
+    if (stateBoundaries) syncStateBoundaries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stateBoundaries]);
+
+  // ── Re-color state/county layers when AQI data changes ─────────────────
   useEffect(() => {
     if (countyBoundariesRef.current) syncCountyBoundaries();
+    if (stateBoundariesRef.current) syncStateBoundaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fresnoAvgAqi]);
 
-  // Apply layer visibility + camera when tier changes
+  // ── Apply tier styling + clear stale hover when tier changes ───────────
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !readyRef.current) return;
-    applyTierVisibility(map, tier);
-    // Update tier for test automation
+
+    // Clear any hover state from the previous tier
+    if (hoveredStateIdRef.current !== undefined) {
+      map.setFeatureState({ source: STATE_SOURCE, id: hoveredStateIdRef.current }, { hover: false });
+      hoveredStateIdRef.current = undefined;
+    }
+    if (hoveredCountyIdRef.current !== undefined) {
+      map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyIdRef.current }, { hover: false });
+      hoveredCountyIdRef.current = undefined;
+    }
+    if (hoveredZipIdRef.current !== undefined) {
+      map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredZipIdRef.current }, { hover: false });
+      hoveredZipIdRef.current = undefined;
+    }
+    if (tooltipRef.current) tooltipRef.current.style.display = "none";
+    map.getCanvas().style.cursor = "";
+
+    applyTierStyling(map, tier);
     type TierWin = Window & typeof globalThis & { __hfaTier?: MapTier };
     (window as TierWin).__hfaTier = tier;
   }, [tier]);
 
-  return (
-    <div ref={containerRef} className="h-full w-full" />
-  );
+  return <div ref={containerRef} className="h-full w-full" />;
 });
 
 export default MapView;
