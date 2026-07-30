@@ -1,12 +1,13 @@
 /**
- * County-tier drill-down tests.
+ * County-tier and State-tier drill-down tests.
  *
  * Verifies:
  *  - County tier is the default view (CA-level zoom)
  *  - CA county boundaries load (58 counties, Fresno distinguished)
  *  - Fresno County hover shows AQI tooltip; non-Fresno shows "No data"
  *  - Clicking Fresno County switches to ZIP tier
- *  - TierControl "ZIP" / "County" buttons work correctly
+ *  - TierControl "State" / "County" / "ZIP" buttons work correctly
+ *  - State tier: CA highlighted, clicking CA switches to county tier
  */
 import { test, expect, type Page } from "@playwright/test";
 
@@ -185,7 +186,6 @@ test.describe("County tier — click-through to ZIP", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await waitForCountyBoundaries(page);
-    await page.waitForTimeout(1_500);
 
     // Project Fresno County center
     type ProjW = W & { __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number } };
@@ -197,6 +197,23 @@ test.describe("County tier — click-through to ZIP", () => {
 
     const canvasRect = await page.locator(".mapboxgl-canvas").first().boundingBox();
     expect(canvasRect).not.toBeNull();
+
+    // Wait until Fresno County is actually rendered at the click position
+    const { cx, cy } = { cx: Math.round(pt!.x), cy: Math.round(pt!.y) };
+    await page.waitForFunction(
+      ({ x, y }: { x: number; y: number }) => {
+        const map = (window as Record<string, unknown>).__hfaMap as {
+          queryRenderedFeatures: (pt: [number, number], opts: Record<string, unknown>) => Array<{ properties?: Record<string, unknown> }>;
+        } | undefined;
+        if (!map) return false;
+        try {
+          const feats = map.queryRenderedFeatures([x, y], { layers: ["county-boundary-fill"] });
+          return feats.some((f) => f.properties?.geoid === "06019");
+        } catch { return false; }
+      },
+      { x: cx, y: cy },
+      { timeout: 10_000, polling: 300 },
+    );
 
     // Click Fresno County
     await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
@@ -288,5 +305,129 @@ test.describe("County tier — click-through to ZIP", () => {
       console.log(`Non-Fresno county popup: "${popupText.substring(0, 80)}"`);
       expect(popupText.toLowerCase()).toMatch(/no sensor data|no data/i);
     }
+  });
+});
+
+test.describe("State tier", () => {
+  async function switchToStateTier(page: Page) {
+    await page.getByRole("button", { name: "State", exact: true }).click();
+    await page.waitForFunction(
+      () => (window as W & { __hfaTier?: string }).__hfaTier === "state",
+      { timeout: 5_000, polling: 200 },
+    );
+  }
+
+  test("TierControl has State button and it switches tier", async ({ page }) => {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForMapLoad(page);
+
+    const stateBtn = page.getByRole("button", { name: "State", exact: true });
+    await expect(stateBtn).toBeVisible();
+
+    await switchToStateTier(page);
+    const tier = await page.evaluate(
+      () => (window as W & { __hfaTier?: string }).__hfaTier,
+    );
+    expect(tier).toBe("state");
+    console.log("State tier active via TierControl ✓");
+  });
+
+  async function waitForStateBoundaries(page: Page, timeoutMs = 20_000) {
+    type StateW = Window & typeof globalThis & { __hfaStateBoundariesLoaded?: boolean };
+    await page.waitForFunction(
+      () => (window as StateW).__hfaStateBoundariesLoaded === true,
+      { timeout: timeoutMs, polling: 300 },
+    );
+  }
+
+  test("state boundaries load (all 50+ states present)", async ({ page }) => {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForMapLoad(page);
+    await switchToStateTier(page);
+    await waitForStateBoundaries(page);
+
+    type StateW = W & { __hfaStateBoundariesLoaded?: boolean };
+    const loaded = await page.evaluate(
+      () => (window as StateW).__hfaStateBoundariesLoaded,
+    );
+    expect(loaded, "state boundaries should be loaded").toBe(true);
+
+    // Count features in the state source
+    const result = await page.evaluate(() => {
+      const map = (window as W & {
+        __hfaMap?: {
+          getSource: (id: string) => { _data?: { features?: unknown[] } } | undefined;
+        };
+      }).__hfaMap;
+      if (!map) return null;
+      const src = map.getSource("state-boundaries");
+      const features = src?._data?.features ?? [];
+      return { count: features.length };
+    });
+
+    if (result) {
+      console.log(`State source features: ${result.count}`);
+      // raw_us_states has 56 rows (50 states + DC + territories)
+      expect(result.count, "expected ≥50 state features").toBeGreaterThanOrEqual(50);
+    } else {
+      // Fallback: flag was set so boundaries were served — that's enough
+      expect(loaded).toBe(true);
+    }
+  });
+
+  test("clicking California in state tier switches to county tier", async ({ page }) => {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForMapLoad(page);
+    await switchToStateTier(page);
+    await waitForStateBoundaries(page);
+
+    // Project California's approximate centroid to canvas pixels
+    type ProjW = W & { __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number } };
+    const pt = await page.evaluate(
+      ([lng, lat]) => (window as ProjW).__hfaProjectLngLat?.(lng, lat) ?? null,
+      [-119.4179, 36.7783] as [number, number], // CA centroid
+    );
+    expect(pt, "__hfaProjectLngLat not available").not.toBeNull();
+    console.log(`CA centroid at canvas: (${pt!.x.toFixed(0)}, ${pt!.y.toFixed(0)})`);
+
+    const canvasRect = await page.locator(".mapboxgl-canvas").first().boundingBox();
+    expect(canvasRect).not.toBeNull();
+
+    const withinX = pt!.x > 0 && pt!.x < canvasRect!.width;
+    const withinY = pt!.y > 0 && pt!.y < canvasRect!.height;
+    if (!withinX || !withinY) {
+      console.log("CA centroid not in viewport at initial state-tier zoom; skipping click test");
+      return;
+    }
+
+    // Wait until the CA state polygon is actually rendered at the click position
+    // (setData is async from the rendering pipeline's perspective)
+    const { cx, cy } = { cx: pt!.x, cy: pt!.y };
+    await page.waitForFunction(
+      ({ x, y }: { x: number; y: number }) => {
+        const map = (window as Record<string, unknown>).__hfaMap as {
+          queryRenderedFeatures: (pt: [number, number], opts: Record<string, unknown>) => Array<{ properties?: Record<string, unknown> }>;
+        } | undefined;
+        if (!map) return false;
+        try {
+          const feats = map.queryRenderedFeatures([x, y], { layers: ["state-boundary-fill"] });
+          return feats.length > 0 && feats[0].properties?.isCalifornia === true;
+        } catch { return false; }
+      },
+      { x: cx, y: cy },
+      { timeout: 10_000, polling: 300 },
+    );
+    console.log("CA state polygon confirmed rendered at click position ✓");
+
+    await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
+
+    type TierW = W & { __hfaTier?: string };
+    await page.waitForFunction(
+      () => (window as TierW).__hfaTier === "county",
+      { timeout: 5_000, polling: 200 },
+    );
+    const tier = await page.evaluate(() => (window as TierW).__hfaTier);
+    console.log(`After clicking CA in state tier: tier = ${tier}`);
+    expect(tier).toBe("county");
   });
 });

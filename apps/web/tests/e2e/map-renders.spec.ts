@@ -34,10 +34,33 @@ async function waitForBoundaries(page: Page, timeoutMs = 15_000) {
   );
 }
 
-/** Switch to ZIP tier and wait for the fly animation to settle. */
+/** Switch to ZIP tier and fly to Fresno for ZIP-detail visibility. */
 async function switchToZipTier(page: Page) {
   await page.getByRole("button", { name: "ZIP", exact: true }).click();
-  await page.waitForTimeout(1_200); // flyToFresno duration=600ms + tile load
+  await page.waitForFunction(
+    () => (window as W & { __hfaTier?: string }).__hfaTier === "zip",
+    { timeout: 5_000, polling: 200 },
+  );
+  // Tier switch no longer auto-zooms — fly explicitly so ZIP detail is visible.
+  await page.evaluate(() => {
+    type MapW = Window & typeof globalThis & { __hfaMap?: { flyTo: (o: unknown) => void } };
+    (window as MapW).__hfaMap?.flyTo({ center: [-119.7871, 36.7378], zoom: 12, duration: 500 });
+  });
+  // Poll until at least one ZIP polygon is rendered in the viewport (max 8s).
+  try {
+    await page.waitForFunction(
+      () => {
+        const map = (window as W & {
+          __hfaMap?: { queryRenderedFeatures: (pt: [number, number], opts: Record<string, unknown>) => unknown[] };
+        }).__hfaMap;
+        if (!map) return false;
+        try { return map.queryRenderedFeatures([500, 332], { layers: ["zip-boundary-fill"] }).length > 0; }
+        catch { return false; }
+      },
+      { timeout: 8_000, polling: 300 },
+    );
+  } catch { /* fall through — individual tests have their own waits */ }
+  await page.waitForTimeout(400);
 }
 
 /**
@@ -244,7 +267,7 @@ test.describe("AQI color palette", () => {
 // If FRESNO_ZOOM regresses to 10, this test fails.
 
 test.describe("Label visibility", () => {
-  test("default tier is county; ZIP tier activates neighborhood labels at zoom≥12", async ({ page }) => {
+  test("default tier is county; ZIP tier at zoom≥12 activates neighborhood labels", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
 
@@ -255,7 +278,7 @@ test.describe("Label visibility", () => {
     console.log(`Initial tier: ${initialTier}`);
     expect(initialTier, "default tier should be 'county'").toBe("county");
 
-    // Switch to ZIP tier → map flies to FRESNO_ZOOM (12).
+    // Switch to ZIP tier and explicitly fly to Fresno at zoom 12.
     await switchToZipTier(page);
 
     const result = await page.evaluate(() => {
@@ -305,8 +328,6 @@ test.describe("Boundary hover", () => {
     await waitForBoundaries(page);
     // Switch to ZIP tier so ZIP boundaries are visible on canvas.
     await switchToZipTier(page);
-    // Let tiles render at FRESNO_ZOOM so boundaries are visible.
-    await page.waitForTimeout(1_500);
 
     // Project the 93727 centroid (a "Good" ZIP with confirmed data) to canvas pixels.
     type ProjW = W & { __hfaProjectLngLat?: (lng: number, lat: number) => { x: number; y: number } };
@@ -320,6 +341,26 @@ test.describe("Boundary hover", () => {
     // Translate canvas-relative pixel to page-level coordinates.
     const canvasRect = await page.locator(".mapboxgl-canvas").first().boundingBox();
     expect(canvasRect, "canvas bounding box not found").not.toBeNull();
+
+    // Wait until 93727 is actually rendered at its projected pixel position.
+    try {
+      await page.waitForFunction(
+        ({ cx, cy }: { cx: number; cy: number }) => {
+          const map = (window as Record<string, unknown>).__hfaMap as {
+            queryRenderedFeatures: (pt: [number, number], opts: Record<string, unknown>) => Array<{ properties?: Record<string, unknown> }>;
+          } | undefined;
+          if (!map) return false;
+          try {
+            const feats = map.queryRenderedFeatures([cx, cy], { layers: ["zip-boundary-fill"] });
+            return feats.some((f) => f.properties?.zip === "93727");
+          } catch { return false; }
+        },
+        { cx: Math.round(pt!.x), cy: Math.round(pt!.y) },
+        { timeout: 8_000, polling: 300 },
+      );
+    } catch {
+      // 93727 not found at its centroid projection — proceed anyway; hover check will fail with a clear message
+    }
 
     const pageX = canvasRect!.x + pt!.x;
     const pageY = canvasRect!.y + pt!.y;
