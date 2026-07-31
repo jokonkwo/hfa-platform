@@ -13,7 +13,7 @@ test("screenshot detail panel with cigarette card", async ({ page }) => {
   );
 
   // Switch to ZIP tier and fly to Fresno (tier switch no longer auto-zooms).
-  await page.getByRole("button", { name: "ZIP", exact: true }).click();
+  await page.getByRole("button", { name: "Zip", exact: true }).click();
   await page.waitForFunction(
     () => (window as unknown as Record<string, unknown>).__hfaTier === "zip",
     { timeout: 5000, polling: 200 },

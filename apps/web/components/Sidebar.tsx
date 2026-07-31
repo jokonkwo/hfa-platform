@@ -52,16 +52,36 @@ function Section({
 }
 
 interface SidebarProps {
-  data: ZipNow[]; // filtered rows
+  data: ZipNow[];
   onSelectZip: (zip: string) => void;
   ingestionEmpty: boolean;
+  onTableView?: () => void;
 }
 
-export function Sidebar({ data, onSelectZip, ingestionEmpty }: SidebarProps) {
+export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView }: SidebarProps) {
   const ranked = [...data].sort((a, b) => a.aqi - b.aqi);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
+      {/* Branding — moved from header */}
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3">
+        <div>
+          <span className="text-sm font-bold text-gray-900">Healthy Fresno Air</span>
+          <span className="ml-2 text-[11px] text-gray-400">v1 POC</span>
+        </div>
+        {onTableView && (
+          <button
+            onClick={onTableView}
+            className="flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            title="Table View"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" d="M3 5h18M3 10h18M3 15h18M3 20h18" />
+            </svg>
+            Table
+          </button>
+        )}
+      </div>
       {/* Air Quality */}
       <Section title="Air Quality" defaultOpen>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">

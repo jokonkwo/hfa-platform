@@ -36,7 +36,7 @@ async function waitForBoundaries(page: Page, timeoutMs = 15_000) {
 
 /** Switch to ZIP tier and fly to Fresno for ZIP-detail visibility. */
 async function switchToZipTier(page: Page) {
-  await page.getByRole("button", { name: "ZIP", exact: true }).click();
+  await page.getByRole("button", { name: "Zip", exact: true }).click();
   await page.waitForFunction(
     () => (window as W & { __hfaTier?: string }).__hfaTier === "zip",
     { timeout: 5_000, polling: 200 },

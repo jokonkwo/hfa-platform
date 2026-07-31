@@ -47,7 +47,7 @@ async function waitForBoundaries(page: Page) {
   );
 }
 async function switchToZipTier(page: Page) {
-  await page.getByRole("button", { name: "ZIP", exact: true }).click();
+  await page.getByRole("button", { name: "Zip", exact: true }).click();
   await page.waitForFunction(
     () => (window as MapW).__hfaTier === "zip",
     { timeout: 5_000, polling: 200 },

@@ -9,6 +9,7 @@ import { FilterPanel, DEFAULT_RANGE, type AqiRange } from "@/components/FilterPa
 import { AboutPanel } from "@/components/AboutPanel";
 import { TierControl, type MapTier } from "@/components/TierControl";
 import { TableViewModal } from "@/components/TableViewModal";
+import { SearchBar } from "@/components/SearchBar";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow } from "@/lib/types";
 
@@ -81,6 +82,17 @@ export default function Home() {
     setSidebarOpen(false);
   }, []);
 
+  const handleSearchSelectZip = useCallback((zip: string) => {
+    if (tier !== "zip") setTier("zip");
+    handleSelectZip(zip);
+  }, [tier, handleSelectZip]);
+
+  const handleShare = useCallback(() => {
+    if (typeof window !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
+  }, []);
+
   // Tier change: reveal the new tier in-place. Pan only if detail is out of view.
   const handleTierChange = useCallback((newTier: MapTier) => {
     setTier(newTier);
@@ -109,48 +121,53 @@ export default function Home() {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* Header */}
-      <header className="relative z-40 flex h-14 flex-shrink-0 items-center border-b border-gray-200 bg-white px-4">
-        <div className="flex flex-1 items-center gap-3">
-          <button
-            onClick={() => setSidebarOpen((o) => !o)}
-            className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 md:hidden"
-            aria-label="Toggle sidebar"
-          >
-            ☰
-          </button>
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-gray-900">Healthy Fresno Air</span>
-            <span className="hidden text-xs text-gray-400 sm:inline">Fresno County · v1 POC</span>
-          </div>
-        </div>
+      {/* Header — reference layout: Search | divider | Tier radios | Share | Filter | About */}
+      <header className="relative z-40 flex h-14 flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4">
+        {/* Search — grows to fill left portion */}
+        <SearchBar rows={rows} onSelect={handleSearchSelectZip} />
 
-        {/* Center: State / County / ZIP tier selector */}
-        <div className="absolute left-1/2 -translate-x-1/2">
-          <TierControl tier={tier} onChange={handleTierChange} />
-        </div>
+        {/* Vertical divider */}
+        <div className="h-7 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
 
-        <div className="flex flex-1 items-center justify-end gap-2">
-          <button
-            onClick={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Table View
-          </button>
-          <button
-            onClick={() => { setFilterOpen((o) => !o); setAboutOpen(false); }}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Filter
-          </button>
-          <button
-            onClick={() => setAboutOpen(true)}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-            aria-label="About"
-          >
-            About
-          </button>
-        </div>
+        {/* Tier radio buttons */}
+        <TierControl tier={tier} onChange={handleTierChange} />
+
+        {/* Share button */}
+        <button
+          onClick={handleShare}
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
+          aria-label="Share"
+          title="Copy link"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+          </svg>
+        </button>
+
+        {/* Filter button */}
+        <button
+          onClick={() => { setFilterOpen((o) => !o); setAboutOpen(false); }}
+          className="flex flex-shrink-0 items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M10 12h4" />
+          </svg>
+          Filter
+        </button>
+
+        {/* About — repurposes the avatar slot; accounts deferred */}
+        <button
+          onClick={() => { setAboutOpen(true); setFilterOpen(false); }}
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white hover:bg-teal-600"
+          aria-label="About"
+          title="About Healthy Fresno Air"
+        >
+          HF
+        </button>
       </header>
 
       {/* Body */}
@@ -160,7 +177,12 @@ export default function Home() {
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <Sidebar data={filtered} onSelectZip={handleSidebarSelectZip} ingestionEmpty={ingestionEmpty} />
+          <Sidebar
+            data={filtered}
+            onSelectZip={handleSidebarSelectZip}
+            ingestionEmpty={ingestionEmpty}
+            onTableView={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
+          />
         </aside>
 
         {sidebarOpen && (

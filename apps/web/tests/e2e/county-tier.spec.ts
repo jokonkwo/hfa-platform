@@ -231,7 +231,7 @@ test.describe("County tier — click-through to ZIP", () => {
 
     // TierControl "ZIP" button should now appear active
     // The ZIP button text should be visible
-    await expect(page.getByRole("button", { name: "ZIP", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Zip", exact: true })).toBeVisible();
   });
 
   test("TierControl ZIP button switches tier and County button returns", async ({ page }) => {
@@ -244,7 +244,7 @@ test.describe("County tier — click-through to ZIP", () => {
     expect(tier).toBe("county");
 
     // Click ZIP
-    await page.getByRole("button", { name: "ZIP", exact: true }).click();
+    await page.getByRole("button", { name: "Zip", exact: true }).click();
     await page.waitForFunction(
       () => (window as TierW).__hfaTier === "zip",
       { timeout: 5_000, polling: 200 },
