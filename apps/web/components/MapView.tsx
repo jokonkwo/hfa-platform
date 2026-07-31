@@ -51,6 +51,29 @@ export type StateBoundaryCollection = GeoJSON.FeatureCollection<
   { GEOID: string; NAME: string; STUSPS: string; isCalifornia: boolean }
 >;
 
+// ── Geometry bbox helper ───────────────────────────────────────────────────
+
+function geomBbox(
+  geom: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+): [[number, number], [number, number]] {
+  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+  function processRing(ring: GeoJSON.Position[]) {
+    for (const coord of ring) {
+      const lng = coord[0], lat = coord[1];
+      if (lng < minLng) minLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lng > maxLng) maxLng = lng;
+      if (lat > maxLat) maxLat = lat;
+    }
+  }
+  if (geom.type === "Polygon") {
+    geom.coordinates.forEach(processRing);
+  } else {
+    geom.coordinates.forEach((polygon) => polygon.forEach(processRing));
+  }
+  return [[minLng, minLat], [maxLng, maxLat]];
+}
+
 // ── GeoJSON builders ───────────────────────────────────────────────────────
 
 type ZipFeatureProps = {
@@ -351,26 +374,37 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     ensureVisible(newTier: MapTier) {
       const map = mapRef.current;
       if (!map) return;
-      const canvas = map.getCanvas();
-      const margin = 80;
 
-      if (newTier === "zip") {
-        // Pan to Fresno only if it's outside the viewport.
+      if (newTier === "state") {
+        // Fit to California using actual state geometry; hardcoded bbox as fallback.
+        const caFeature = stateBoundariesRef.current?.features.find(
+          (f) => f.properties.STUSPS === "CA",
+        );
+        const bounds: mapboxgl.LngLatBoundsLike = caFeature
+          ? geomBbox(caFeature.geometry)
+          : [[-124.5, 32.5], [-114.1, 42.1]];
+        map.fitBounds(bounds, { padding: 20, duration: 600, maxZoom: 7 });
+      } else if (newTier === "county") {
+        // Fit to Fresno County's actual geometry bbox.
+        const fresnoFeature = countyBoundariesRef.current?.features.find(
+          (f) => f.properties.GEOID === FRESNO_COUNTY_GEOID,
+        );
+        if (fresnoFeature) {
+          map.fitBounds(geomBbox(fresnoFeature.geometry), { padding: 60, duration: 600, maxZoom: 11 });
+        } else {
+          // Fallback: fit to CA until boundaries load.
+          map.fitBounds([[-124.5, 32.5], [-114.1, 42.1]], { padding: 20, duration: 600, maxZoom: 7 });
+        }
+      } else if (newTier === "zip") {
+        // No forced re-zoom; pan to Fresno only if it's outside the viewport.
+        const canvas = map.getCanvas();
+        const margin = 80;
         const pt = map.project(FRESNO_CENTER as [number, number]);
         const outOfView =
           pt.x < margin || pt.x > canvas.width - margin ||
           pt.y < margin || pt.y > canvas.height - margin;
         if (outOfView) {
           map.flyTo({ center: FRESNO_CENTER as [number, number], zoom: Math.max(map.getZoom(), FRESNO_ZOOM), duration: 500 });
-        }
-      } else if (newTier === "county" || newTier === "state") {
-        // Pan to CA only if it's entirely outside the viewport.
-        const pt = map.project(CA_CENTER);
-        const outOfView =
-          pt.x < margin || pt.x > canvas.width - margin ||
-          pt.y < margin || pt.y > canvas.height - margin;
-        if (outOfView) {
-          map.flyTo({ center: CA_CENTER, zoom: CA_ZOOM, duration: 500 });
         }
       }
     },
