@@ -324,13 +324,17 @@ interface MapViewProps {
   stateBoundaries: StateBoundaryCollection | null;
   tier: MapTier;
   fresnoAvgAqi: number | null;
+  selectedStateGeoid?: string;
+  selectedCountyGeoid?: string;
   onSelectZip: (zip: string) => void;
   onCountyClick: (geoid: string) => void;
   onStateClick: (geoid: string) => void;
 }
 
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
-  { data, boundaries, countyBoundaries, stateBoundaries, tier, fresnoAvgAqi, onSelectZip, onCountyClick, onStateClick },
+  { data, boundaries, countyBoundaries, stateBoundaries, tier, fresnoAvgAqi,
+    selectedStateGeoid = "06", selectedCountyGeoid = "06019",
+    onSelectZip, onCountyClick, onStateClick },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -345,6 +349,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const stateBoundariesRef = useRef<StateBoundaryCollection | null>(stateBoundaries);
   const tierRef = useRef<MapTier>(tier);
   const fresnoAvgAqiRef = useRef<number | null>(fresnoAvgAqi);
+  const selectedStateGeoidRef = useRef(selectedStateGeoid);
+  const selectedCountyGeoidRef = useRef(selectedCountyGeoid);
   const onSelectRef = useRef(onSelectZip);
   const onCountyClickRef = useRef(onCountyClick);
   const onStateClickRef = useRef(onStateClick);
@@ -360,6 +366,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   stateBoundariesRef.current = stateBoundaries;
   tierRef.current = tier;
   fresnoAvgAqiRef.current = fresnoAvgAqi;
+  selectedStateGeoidRef.current = selectedStateGeoid;
+  selectedCountyGeoidRef.current = selectedCountyGeoid;
   onSelectRef.current = onSelectZip;
   onCountyClickRef.current = onCountyClick;
   onStateClickRef.current = onStateClick;
@@ -377,35 +385,48 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       if (!map) return;
 
       if (newTier === "state") {
-        // Fit to California using actual state geometry; hardcoded bbox as fallback.
-        const caFeature = stateBoundariesRef.current?.features.find(
-          (f) => f.properties.STUSPS === "CA",
+        // Fit to selected state; fallback to CONUS bbox.
+        const stateFeature = stateBoundariesRef.current?.features.find(
+          (f) => f.properties.GEOID === selectedStateGeoidRef.current,
         );
-        const bounds: mapboxgl.LngLatBoundsLike = caFeature
-          ? geomBbox(caFeature.geometry)
+        const bounds: mapboxgl.LngLatBoundsLike = stateFeature
+          ? geomBbox(stateFeature.geometry)
           : [[-124.5, 32.5], [-114.1, 42.1]];
         map.fitBounds(bounds, { padding: 20, duration: 600, maxZoom: 7 });
       } else if (newTier === "county") {
-        // Fit to Fresno County's actual geometry bbox.
-        const fresnoFeature = countyBoundariesRef.current?.features.find(
-          (f) => f.properties.GEOID === FRESNO_COUNTY_GEOID,
+        // Fit to selected county's actual geometry bbox.
+        const countyFeature = countyBoundariesRef.current?.features.find(
+          (f) => f.properties.GEOID === selectedCountyGeoidRef.current,
         );
-        if (fresnoFeature) {
-          map.fitBounds(geomBbox(fresnoFeature.geometry), { padding: 60, duration: 600, maxZoom: 11 });
+        if (countyFeature) {
+          map.fitBounds(geomBbox(countyFeature.geometry), { padding: 60, duration: 600, maxZoom: 11 });
         } else {
           // Fallback: fit to CA until boundaries load.
           map.fitBounds([[-124.5, 32.5], [-114.1, 42.1]], { padding: 20, duration: 600, maxZoom: 7 });
         }
       } else if (newTier === "zip") {
-        // No forced re-zoom; pan to Fresno only if it's outside the viewport.
+        // No forced re-zoom; pan to selected county centroid only if out of view.
+        const countyFeature = countyBoundariesRef.current?.features.find(
+          (f) => f.properties.GEOID === selectedCountyGeoidRef.current,
+        );
+        let center: [number, number];
+        let targetZoom: number;
+        if (countyFeature) {
+          const [[w, s], [e, n]] = geomBbox(countyFeature.geometry);
+          center = [(w + e) / 2, (s + n) / 2];
+          targetZoom = FRESNO_ZOOM;
+        } else {
+          center = FRESNO_CENTER as [number, number];
+          targetZoom = FRESNO_ZOOM;
+        }
         const canvas = map.getCanvas();
         const margin = 80;
-        const pt = map.project(FRESNO_CENTER as [number, number]);
+        const pt = map.project(center);
         const outOfView =
           pt.x < margin || pt.x > canvas.width - margin ||
           pt.y < margin || pt.y > canvas.height - margin;
         if (outOfView) {
-          map.flyTo({ center: FRESNO_CENTER as [number, number], zoom: Math.max(map.getZoom(), FRESNO_ZOOM), duration: 500 });
+          map.flyTo({ center, zoom: Math.max(map.getZoom(), targetZoom), duration: 500 });
         }
       }
     },

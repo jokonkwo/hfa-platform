@@ -32,6 +32,8 @@ export default function Home() {
   const [countyBoundaries, setCountyBoundaries] = useState<CountyBoundaryCollection | null>(null);
   const [stateBoundaries, setStateBoundaries] = useState<StateBoundaryCollection | null>(null);
   const [tier, setTier] = useState<MapTier>("county");
+  const [selectedStateGeoid, setSelectedStateGeoid] = useState("06");
+  const [selectedCountyGeoid, setSelectedCountyGeoid] = useState("06019");
 
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
   const [range, setRange] = useState<AqiRange>(DEFAULT_RANGE);
@@ -42,6 +44,7 @@ export default function Home() {
 
   const mapRef = useRef<MapViewHandle | null>(null);
 
+  // Fetch AQI rows and state boundaries once on mount.
   useEffect(() => {
     const ctrl = new AbortController();
     fetchZipsNow(ctrl.signal)
@@ -55,11 +58,19 @@ export default function Home() {
         );
         setState("error");
       });
-    fetchZipBoundaries().then((b) => { if (b) setBoundaries(b); });
-    fetchCountyBoundaries().then((b) => { if (b) setCountyBoundaries(b); });
     fetchStateBoundaries().then((b) => { if (b) setStateBoundaries(b); });
     return () => ctrl.abort();
   }, []);
+
+  // Refetch county boundaries whenever the selected state changes.
+  useEffect(() => {
+    fetchCountyBoundaries(selectedStateGeoid).then((b) => { if (b) setCountyBoundaries(b); });
+  }, [selectedStateGeoid]);
+
+  // Refetch ZIP boundaries whenever the selected county changes.
+  useEffect(() => {
+    fetchZipBoundaries(selectedCountyGeoid).then((b) => { if (b) setBoundaries(b); });
+  }, [selectedCountyGeoid]);
 
   const filtered = useMemo(
     () => rows.filter((r) => r.aqi >= range.min && r.aqi <= range.max),
@@ -85,7 +96,12 @@ export default function Home() {
   const handleSearchSelect = useCallback((result: SearchResult) => {
     const targetTier = result.type === "state" ? "state" : result.type === "county" ? "county" : "zip";
     if (tier !== targetTier) setTier(targetTier);
-    if (result.type === "zip") {
+    if (result.type === "state") {
+      setSelectedStateGeoid(result.identifier);
+    } else if (result.type === "county") {
+      if (result.state_fp) setSelectedStateGeoid(result.state_fp);
+      setSelectedCountyGeoid(result.identifier);
+    } else {
       handleSelectZip(result.identifier);
     }
     mapRef.current?.flyToRegion(result);
@@ -103,14 +119,16 @@ export default function Home() {
     mapRef.current?.ensureVisible(newTier);
   }, []);
 
-  // Clicking CA at state tier → reveal county detail
-  const handleStateClick = useCallback((_geoid: string) => {
+  // Clicking a state → switch to county tier for that state.
+  const handleStateClick = useCallback((geoid: string) => {
+    setSelectedStateGeoid(geoid);
     setTier("county");
     mapRef.current?.ensureVisible("county");
   }, []);
 
-  // Clicking Fresno County → reveal ZIP detail
-  const handleCountyClick = useCallback((_geoid: string) => {
+  // Clicking a county → switch to ZIP tier for that county.
+  const handleCountyClick = useCallback((geoid: string) => {
+    setSelectedCountyGeoid(geoid);
     setTier("zip");
     mapRef.current?.ensureVisible("zip");
   }, []);
@@ -202,6 +220,8 @@ export default function Home() {
             stateBoundaries={stateBoundaries}
             tier={tier}
             fresnoAvgAqi={fresnoAvgAqi}
+            selectedStateGeoid={selectedStateGeoid}
+            selectedCountyGeoid={selectedCountyGeoid}
             onSelectZip={handleSelectZip}
             onCountyClick={handleCountyClick}
             onStateClick={handleStateClick}
