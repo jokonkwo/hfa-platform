@@ -167,6 +167,90 @@ Aggregates `silver_sensor_corrected_10min` into ZIP-level rollup.
 
 These views are the authoritative API contract. Endpoints must serve exactly these shapes.
 
+### `GET /v1/states/boundaries` — US state boundary polygons
+
+Returns a GeoJSON `FeatureCollection` of all 56 US states/territories queried at request time from `HFA_DEV.main.raw_us_states` (Census TIGER 2025). Registered under `apps/api/src/hfa_api/routes/states.py`. Response is `lru_cache`-cached for the process lifetime and pre-warmed at startup.
+
+Each feature has four properties:
+- `GEOID` — 2-digit FIPS code (e.g. `"06"` for California)
+- `NAME` — full state name (e.g. `"California"`)
+- `STUSPS` — 2-letter abbreviation (e.g. `"CA"`)
+- `isCalifornia` — boolean (`true` for GEOID `"06"`, `false` for all others)
+
+The frontend uses this for the **state tier** of the drill-down map hierarchy. California is colored by average AQI across pilot ZIPs; all other states are rendered grey (`#cccccc`) as "no sensor data yet."
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "GEOID": "06", "NAME": "California", "STUSPS": "CA", "isCalifornia": true },
+      "geometry": { "type": "MultiPolygon", "coordinates": [...] }
+    }
+  ]
+}
+```
+
+### `GET /v1/search?q=` — national search for states, counties, and ZIP codes
+
+**Query params:** `?q=` (required, 1–100 chars). No `Cache-Control` — responses include `Cache-Control: no-store`.
+
+Queries `raw_us_states`, `raw_us_counties`, and `raw_us_zctas` in HFA_DEV. Returns up to 10 results (3 states + 5 counties + 5 ZIPs, deduped by order). Registered under `apps/api/src/hfa_api/routes/search.py`.
+
+**Result type rules:**
+- **States**: abbreviation exact-match (any length) OR name substring (≥3 chars)
+- **Counties**: name/full-name substring (≥3 chars only)
+- **ZIPs**: prefix match on `zip5` (numeric queries only, any length)
+
+Each result object:
+
+| Field | Type | Notes |
+|---|---|---|
+| `type` | `"state" \| "county" \| "zip"` | Result category |
+| `identifier` | string | State GEOID (`"06"`), county GEOID (`"06019"`), or zip5 (`"93701"`) |
+| `display_name` | string | `"California"`, `"Fresno County, CA"`, or `"93701"` |
+| `abbr` | string \| null | State abbreviation (`"CA"`) for states; `null` for counties and ZIPs |
+| `state_fp` | string \| null | 2-digit state FIPS (`"06"`) for counties; `null` for states and ZIPs |
+| `bbox` | [west, south, east, north] \| null | Bounding box for states and counties; `null` for ZIPs |
+| `lon` | number | Centroid longitude |
+| `lat` | number | Centroid latitude |
+
+```json
+[
+  {
+    "type": "state",
+    "identifier": "06",
+    "display_name": "California",
+    "abbr": "CA",
+    "state_fp": null,
+    "bbox": [-124.4820, 32.5288, -114.1312, 42.0095],
+    "lon": -119.4696,
+    "lat": 37.1841
+  },
+  {
+    "type": "county",
+    "identifier": "06019",
+    "display_name": "Fresno County, CA",
+    "abbr": null,
+    "state_fp": "06",
+    "bbox": [-120.5260, 35.7817, -118.3544, 37.5778],
+    "lon": -119.6490,
+    "lat": 36.7378
+  },
+  {
+    "type": "zip",
+    "identifier": "93701",
+    "display_name": "93701",
+    "abbr": null,
+    "state_fp": null,
+    "bbox": null,
+    "lon": -119.7834,
+    "lat": 36.7469
+  }
+]
+```
+
 ### `GET /v1/counties/boundaries` — CA county boundary polygons
 
 **Query params:** `?state=06` (default `"06"` = California). Returns all counties for the given 2-digit FIPS state code.
