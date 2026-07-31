@@ -72,7 +72,10 @@ def get_zip_boundaries(
 @router.get("/now", summary="Current conditions for all ZIPs")
 def get_all_zips_now() -> list[dict]:
     df = query_df("SELECT * FROM api_zip_now ORDER BY zip")
-    return _to_records(df)
+    records = _to_records(df)
+    for rec in records:
+        rec["population"] = None
+    return records
 
 
 @router.get("/{zip_code}/now", summary="Current conditions for one ZIP")
@@ -80,7 +83,9 @@ def get_zip_now(zip_code: str) -> dict:
     df = query_df("SELECT * FROM api_zip_now WHERE zip = ?", [zip_code])
     if df.empty:
         raise HTTPException(status_code=404, detail=f"ZIP {zip_code} not found")
-    return _to_records(df)[0]
+    rec = _to_records(df)[0]
+    rec["population"] = None
+    return rec
 
 
 @router.get("/{zip_code}/hourly", summary="Hourly rollup for one ZIP")

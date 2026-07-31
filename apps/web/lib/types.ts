@@ -5,6 +5,7 @@ export interface ZipNow {
   pm25: number;
   aqi: number;
   category: string;
+  population: number | null; // Census ACS hookup — always null until phase 2
   sample_size: number;
   freshness_pct: number;
   qc_badge: string;

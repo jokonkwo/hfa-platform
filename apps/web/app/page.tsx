@@ -8,6 +8,7 @@ import { DetailPanel } from "@/components/DetailPanel";
 import { FilterPanel, DEFAULT_RANGE, type AqiRange } from "@/components/FilterPanel";
 import { AboutPanel } from "@/components/AboutPanel";
 import { TierControl, type MapTier } from "@/components/TierControl";
+import { TableViewModal } from "@/components/TableViewModal";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow } from "@/lib/types";
 
@@ -36,6 +37,7 @@ export default function Home() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [tableViewOpen, setTableViewOpen] = useState(false);
 
   const mapRef = useRef<MapViewHandle | null>(null);
 
@@ -130,6 +132,12 @@ export default function Home() {
 
         <div className="flex flex-1 items-center justify-end gap-2">
           <button
+            onClick={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Table View
+          </button>
+          <button
             onClick={() => { setFilterOpen((o) => !o); setAboutOpen(false); }}
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
@@ -201,6 +209,13 @@ export default function Home() {
       </div>
 
       <AboutPanel open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      <TableViewModal
+        open={tableViewOpen}
+        tier={tier}
+        rows={filtered}
+        fresnoAvgAqi={fresnoAvgAqi}
+        onClose={() => setTableViewOpen(false)}
+      />
     </div>
   );
 }

@@ -224,6 +224,7 @@ Returns a GeoJSON `FeatureCollection` queried at request time from `HFA_DEV.main
     "pm25": 8.4,
     "aqi": 35,
     "category": "Good",
+    "population": null,
     "sample_size": 3,
     "freshness_pct": 100.0,
     "qc_badge": "verified",
@@ -233,6 +234,8 @@ Returns a GeoJSON `FeatureCollection` queried at request time from `HFA_DEV.main
 ```
 
 Single-ZIP endpoint returns one object (not an array). Returns 404 if ZIP not found.
+
+**`population` field:** Always `null` until phase 2 Census/ACS hookup. The field is present in every response so that when population data lands, it is a data hookup, not a schema change. Frontend renders `null` as `"—"` in the Table View.
 
 ### `api_zip_hourly` → `GET /v1/zips/{zip}/hourly`
 
