@@ -173,15 +173,22 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
     const otLine  = tier === "state" ? 0.30 : tier === "county" ? 0.10 : 0.08;
     map.setPaintProperty(STATE_OUTLINE, "line-opacity", [
       "case",
+      ["boolean", ["feature-state", "hover"], false], 1.0,
       ["==", ["get", "isCalifornia"], true], caLine,
       otLine,
     ] as unknown as number);
     map.setPaintProperty(STATE_OUTLINE, "line-width", [
       "case",
+      ["boolean", ["feature-state", "hover"], false], tier === "state" ? 3.0 : 1.5,
       ["==", ["get", "isCalifornia"], true],
       tier === "state" ? 1.8 : 0.8,
       tier === "state" ? 1.0 : 0.5,
     ] as unknown as number);
+    map.setPaintProperty(STATE_OUTLINE, "line-color", [
+      "case",
+      ["boolean", ["feature-state", "hover"], false], "#000000",
+      "#444444",
+    ] as unknown as string);
   }
 
   // ── County layer: hidden in state tier; primary in county; context in zip
@@ -198,12 +205,19 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
           0.10,
         ] as unknown as number);
         map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
-          "case", ["==", ["get", "hasData"], 1], 0.9, 0.30,
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 1.0,
+          ["==", ["get", "hasData"], 1], 0.9, 0.30,
         ] as unknown as number);
         map.setPaintProperty(COUNTY_OUTLINE, "line-width", [
           "case",
           ["boolean", ["feature-state", "hover"], false], 3.0, 1.8,
         ] as unknown as number);
+        map.setPaintProperty(COUNTY_OUTLINE, "line-color", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], "#000000",
+          "#111111",
+        ] as unknown as string);
       } else {
         // zip tier — county is secondary context
         map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
@@ -230,8 +244,20 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
         0.18,
       ] as unknown as number);
       map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
-        "case", ["==", ["get", "hasData"], 1], 0.90, 0.55,
+        "case",
+        ["boolean", ["feature-state", "hover"], false], 1.0,
+        ["==", ["get", "hasData"], 1], 0.90, 0.55,
       ] as unknown as number);
+      map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-width", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], 4.0,
+        2.5,
+      ] as unknown as number);
+      map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-color", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], "#000000",
+        "#111111",
+      ] as unknown as string);
     }
   }
   if (map.getLayer(ZIP_CIRCLE_LAYER)) {
