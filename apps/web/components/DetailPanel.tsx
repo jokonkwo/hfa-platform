@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ZipNow, ZipHourly, ZipDaily } from "@/lib/types";
 import { CategoryBadge } from "./CategoryBadge";
 import { categoryColor, aqiToCategory, pm25ToAqi } from "@/lib/aqi";
@@ -125,47 +125,104 @@ function meanOf(nums: number[]): number {
   return nums.length === 0 ? 0 : nums.reduce((a, b) => a + b, 0) / nums.length;
 }
 
+// ── Pacific-time formatters ───────────────────────────────────────────────────
+
+function fmtHourPacific(ms: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    hour12: true,
+    timeZone: "America/Los_Angeles",
+  }).format(new Date(ms));
+}
+
+function fmtDateLabel(ms: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "America/Los_Angeles",
+  }).format(new Date(ms));
+}
+
+function fmtHourTooltip(ms: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    hour12: true,
+    timeZone: "America/Los_Angeles",
+  }).format(new Date(ms));
+}
+
+function fmtDateTooltip(ms: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "America/Los_Angeles",
+  }).format(new Date(ms));
+}
+
 // ── Mini SVG chart ────────────────────────────────────────────────────────────
 
 interface ChartPt {
-  t: number; // ms since epoch
+  t: number; // ms since epoch (UTC)
   aqi: number;
 }
+
+const EPA_TICKS = [50, 100, 150, 200, 300];
 
 function MiniChart({
   points,
   gapMs,
   ariaLabel,
+  timeLabel,
 }: {
   points: ChartPt[];
   gapMs: number;
   ariaLabel: string;
+  timeLabel: "hour" | "day";
 }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const sorted = [...points].sort((a, b) => a.t - b.t);
+
+  const W = 300, H = 124;
+  const PL = 26, PR = 6, PT = 8, PB = 24;
+  const PW = W - PL - PR;
+  const PH = H - PT - PB;
+
+  const tMin = sorted.length > 0 ? sorted[0].t : 0;
+  const tMax = sorted.length > 0 ? sorted[sorted.length - 1].t : 1;
+  const rawMax = sorted.length > 0 ? Math.max(...sorted.map((p) => p.aqi)) : 0;
+  const aqiMin = 0;
+  const aqiMax = Math.max(Math.ceil(rawMax / 10) * 10, 30);
+
+  const xOf = useCallback((t: number): number => {
+    if (tMax === tMin) return PL + PW / 2;
+    return PL + ((t - tMin) / (tMax - tMin)) * PW;
+  }, [tMin, tMax]);
+
+  const yOf = useCallback((aqi: number): number => {
+    return PT + PH - ((aqi - aqiMin) / Math.max(1, aqiMax - aqiMin)) * PH;
+  }, [aqiMax]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGRectElement>) => {
+    const svgEl = (e.currentTarget as SVGElement).closest("svg") as SVGSVGElement | null;
+    if (!svgEl || sorted.length === 0) return;
+    const { left, width } = svgEl.getBoundingClientRect();
+    const mouseX = ((e.clientX - left) / width) * W;
+    let nearestIdx = 0, nearestDist = Infinity;
+    sorted.forEach((p, i) => {
+      const dist = Math.abs(xOf(p.t) - mouseX);
+      if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+    });
+    setHoverIdx(nearestIdx);
+  }, [sorted, xOf]);
+
   if (points.length === 0) {
     return (
       <div className="py-6 text-center text-xs text-gray-400">No data</div>
     );
-  }
-
-  const sorted = [...points].sort((a, b) => a.t - b.t);
-  const tMin = sorted[0].t;
-  const tMax = sorted[sorted.length - 1].t;
-  const rawMax = Math.max(...sorted.map((p) => p.aqi));
-  const rawMin = Math.min(...sorted.map((p) => p.aqi));
-  const aqiMax = Math.ceil(Math.max(rawMax, 50) / 50) * 50;
-  const aqiMin = Math.max(0, Math.floor((rawMin - 5) / 10) * 10);
-
-  const W = 300, H = 110;
-  const PL = 22, PR = 6, PT = 6, PB = 18;
-  const PW = W - PL - PR;
-  const PH = H - PT - PB;
-
-  function xOf(t: number): number {
-    if (tMax === tMin) return PL + PW / 2;
-    return PL + ((t - tMin) / (tMax - tMin)) * PW;
-  }
-  function yOf(aqi: number): number {
-    return PT + PH - ((aqi - aqiMin) / Math.max(1, aqiMax - aqiMin)) * PH;
   }
 
   // Split into continuous segments at gaps
@@ -185,71 +242,133 @@ function MiniChart({
   const lineColor = categoryColor(aqiToCategory(avgAqi));
   const bottom = yOf(aqiMin);
 
-  // Y-axis reference lines at AQI 50, 100, 150, 200, 300 if within range
-  const yRefs = [50, 100, 150, 200, 300].filter(
-    (v) => v > aqiMin && v <= aqiMax,
-  );
+  // Y reference lines
+  const yRefs = [0, ...EPA_TICKS.filter((v) => v > 0 && v <= aqiMax)];
+
+  // X-axis tick times
+  const xTicks: number[] = [];
+  if (timeLabel === "day") {
+    sorted.forEach((p) => xTicks.push(p.t));
+  } else {
+    // 4-hour UTC boundaries within [tMin, tMax]
+    const fourH = 4 * 3600 * 1000;
+    const firstBoundary = Math.ceil(tMin / fourH) * fourH;
+    for (let t = firstBoundary; t <= tMax; t += fourH) xTicks.push(t);
+    if (xTicks.length === 0 || xTicks[0] > tMin) xTicks.unshift(tMin);
+    if (xTicks[xTicks.length - 1] < tMax) xTicks.push(tMax);
+  }
+
+  const safeIdx = hoverIdx !== null && hoverIdx < sorted.length ? hoverIdx : null;
 
   return (
-    <div>
-      <svg
-        width="100%"
-        viewBox={`0 0 ${W} ${H}`}
-        role="img"
-        aria-label={ariaLabel}
-        className="overflow-visible"
-      >
-        {/* Y reference lines */}
-        {yRefs.map((v) => (
-          <g key={v}>
-            <line
-              x1={PL} y1={yOf(v)} x2={PL + PW} y2={yOf(v)}
-              stroke="#e5e7eb" strokeWidth={0.5} strokeDasharray="2 3"
+    <svg
+      width="100%"
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-label={ariaLabel}
+      className="overflow-visible"
+    >
+      <defs>
+        <filter id="hfa-shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor="#00000020" />
+        </filter>
+      </defs>
+
+      {/* Y reference lines + labels */}
+      {yRefs.map((v) => (
+        <g key={v}>
+          <line
+            x1={PL} y1={yOf(v)} x2={PL + PW} y2={yOf(v)}
+            stroke={v === 0 ? "#d1d5db" : "#e5e7eb"}
+            strokeWidth={v === 0 ? 0.75 : 0.5}
+            strokeDasharray={v === 0 ? undefined : "2 3"}
+          />
+          <text
+            x={PL - 3} y={yOf(v)}
+            textAnchor="end" fontSize={7} fill="#9ca3af"
+            dominantBaseline="middle"
+          >
+            {v}
+          </text>
+        </g>
+      ))}
+
+      {/* Per-segment area + line */}
+      {segs.map((s, i) => {
+        const pts = s.map((p) => ({ x: xOf(p.t), y: yOf(p.aqi) }));
+        const areaD =
+          `M ${pts[0].x} ${bottom} ` +
+          pts.map((p) => `L ${p.x} ${p.y}`).join(" ") +
+          ` L ${pts[pts.length - 1].x} ${bottom} Z`;
+        const lineD = pts
+          .map((p, j) => `${j === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+          .join(" ");
+        return (
+          <g key={i}>
+            <path d={areaD} fill={lineColor} fillOpacity={0.15} />
+            <path
+              d={lineD}
+              stroke={lineColor}
+              strokeWidth={1.5}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            <text
-              x={PL - 3} y={yOf(v)}
-              textAnchor="end" fontSize={7} fill="#9ca3af"
-              dominantBaseline="middle"
-            >
-              {v}
-            </text>
           </g>
-        ))}
+        );
+      })}
 
-        {/* Per-segment area + line */}
-        {segs.map((s, i) => {
-          const pts = s.map((p) => ({ x: xOf(p.t), y: yOf(p.aqi) }));
-          const areaD =
-            `M ${pts[0].x} ${bottom} ` +
-            pts.map((p) => `L ${p.x} ${p.y}`).join(" ") +
-            ` L ${pts[pts.length - 1].x} ${bottom} Z`;
-          const lineD = pts
-            .map((p, j) => `${j === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-            .join(" ");
-          return (
-            <g key={i}>
-              <path d={areaD} fill={lineColor} fillOpacity={0.15} />
-              <path
-                d={lineD}
-                stroke={lineColor}
-                strokeWidth={1.5}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </g>
-          );
-        })}
-      </svg>
+      {/* X-axis labels inside SVG */}
+      {xTicks.map((t, i) => {
+        const cx = Math.min(Math.max(xOf(t), PL + 12), PL + PW - 12);
+        const label = timeLabel === "hour" ? fmtHourPacific(t) : fmtDateLabel(t);
+        return (
+          <text
+            key={i}
+            x={cx}
+            y={H - 6}
+            textAnchor="middle"
+            fontSize={7}
+            fill="#9ca3af"
+          >
+            {label}
+          </text>
+        );
+      })}
 
-      {/* X axis labels */}
-      <div className="flex justify-between px-5 -mt-1 text-[9px] text-gray-400">
-        <span>{fmtDate(new Date(tMin).toISOString().substring(0, 10))}</span>
-        {sorted.length > 2 && (
-          <span>{fmtDate(new Date(tMax).toISOString().substring(0, 10))}</span>
-        )}
-      </div>
-    </div>
+      {/* Invisible overlay for hover detection — must be after paths, before tooltip */}
+      <rect
+        x={PL} y={PT} width={PW} height={PH}
+        fill="transparent"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverIdx(null)}
+        style={{ cursor: "crosshair" }}
+      />
+
+      {/* Hover indicator */}
+      {safeIdx !== null && (() => {
+        const pt = sorted[safeIdx];
+        const cx = xOf(pt.t);
+        const cy = yOf(pt.aqi);
+        const tipLabel = timeLabel === "hour" ? fmtHourTooltip(pt.t) : fmtDateTooltip(pt.t);
+        const tipW = 76, tipH = 40;
+        const tipX = cx + 4 + tipW > PL + PW ? cx - 4 - tipW : cx + 4;
+        const tipY = Math.min(Math.max(cy - tipH / 2, PT), PT + PH - tipH);
+        return (
+          <g style={{ pointerEvents: "none" }}>
+            <line x1={cx} y1={PT} x2={cx} y2={PT + PH} stroke="#9ca3af" strokeWidth={0.75} />
+            <circle cx={cx} cy={cy} r={3.5} fill={lineColor} stroke="white" strokeWidth={1.5} />
+            <rect x={tipX} y={tipY} width={tipW} height={tipH} rx={3}
+              fill="white" stroke="#e5e7eb" strokeWidth={0.75}
+              filter="url(#hfa-shadow)" />
+            <text x={tipX + tipW / 2} y={tipY + 15} textAnchor="middle"
+              fontSize={14} fontWeight={700} fill="#111827">{pt.aqi}</text>
+            <text x={tipX + tipW / 2} y={tipY + 29} textAnchor="middle"
+              fontSize={6.5} fill="#6b7280">{tipLabel}</text>
+          </g>
+        );
+      })()}
+    </svg>
   );
 }
 
@@ -412,6 +531,7 @@ function HistorySection({ zip }: { zip: string }) {
             points={dayHours}
             gapMs={2 * 3600 * 1000}
             ariaLabel={`Hourly AQI for ZIP ${zip} on ${lastDate}`}
+            timeLabel="hour"
           />
         )}
         <p className="text-center text-[10px] text-gray-400">
@@ -443,6 +563,7 @@ function HistorySection({ zip }: { zip: string }) {
           points={dailyPts}
           gapMs={2 * 24 * 3600 * 1000}
           ariaLabel={`Daily AQI for ZIP ${zip}, last 7 days of pilot`}
+          timeLabel="day"
         />
         <p className="text-center text-[10px] text-gray-400">
           Pilot data · Oct 7, 2025 – Jan 21, 2026
@@ -457,7 +578,7 @@ function HistorySection({ zip }: { zip: string }) {
       <p className="text-xs font-semibold text-gray-700">Pilot Data History</p>
       <div className="flex gap-2">
         <SummaryTile
-          label="Last Day"
+          label="Last 24 Hours"
           dateRange={lastDate}
           aqi={lastDayAqi}
           delta={lastDayDelta !== null ? Math.round(lastDayDelta) : null}
@@ -477,7 +598,7 @@ function HistorySection({ zip }: { zip: string }) {
         />
       </div>
       <p className="text-[10px] text-gray-400">
-        Pilot data · Oct 7, 2025 – Jan 21, 2026 · Tap a tile for the trend
+        Pilot data · Oct 7, 2025 – Jan 21, 2026 · Tap a tile to explore
       </p>
     </div>
   );

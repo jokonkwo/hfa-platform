@@ -26,7 +26,7 @@ test.describe("History section — pilot ZIP", () => {
     });
 
     // Both tile labels present
-    await expect(page.locator("text=Last Day")).toBeVisible();
+    await expect(page.locator("text=Last 24 Hours")).toBeVisible();
     await expect(page.locator("text=Last 7 Days")).toBeVisible();
 
     // The footer note mentions pilot data (one of several matching nodes is fine)
@@ -38,14 +38,14 @@ test.describe("History section — pilot ZIP", () => {
     ).not.toBeVisible();
   });
 
-  test("Last Day tile click → hourly drill-down with SVG chart", async ({
+  test("Last 24 Hours tile click → hourly drill-down with SVG chart", async ({
     page,
   }) => {
     await openPanel(page, PILOT_ZIP);
     await page.waitForSelector("text=Pilot Data History", { timeout: 10000 });
 
-    // Click the "Last Day" tile
-    await page.locator("button", { hasText: "Last Day" }).click();
+    // Click the "Last 24 Hours" tile
+    await page.locator("button", { hasText: "Last 24 Hours" }).click();
 
     // Back arrow should appear
     await expect(page.locator("text=← Back")).toBeVisible({ timeout: 8000 });
@@ -106,8 +106,8 @@ test.describe("History section — pilot ZIP", () => {
     // Actual date ranges (not just relative labels) must be present
     expect(panelText).toMatch(/2026/); // pilot year visible
     expect(panelText).toMatch(/Jan \d+, 2026/); // specific date rendered
-    // Must not use relative-to-today phrasing without an actual date
-    expect(panelText).not.toMatch(/last 24 hours/i);
+    // The "Last 24 Hours" tile label is present (CSS uppercase renders it as "LAST 24 HOURS")
+    expect(panelText).toMatch(/last 24 hours/i);
   });
 });
 
