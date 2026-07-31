@@ -257,16 +257,16 @@ function MiniChart({
 
 function TrendArrow({ delta }: { delta: number }) {
   if (delta === 0)
-    return <span className="text-gray-400 text-xs">→ no change</span>;
+    return <span className="text-gray-400 text-xs">&#x2192; no change</span>;
   if (delta > 0)
     return (
-      <span className="text-xs text-amber-700">
-        ↑ {Math.abs(delta)} vs prior
+      <span className="text-xs text-red-600">
+        &#x2197; {Math.abs(delta)} vs prior
       </span>
     );
   return (
     <span className="text-xs text-green-700">
-      ↓ {Math.abs(delta)} vs prior
+      &#x2198; {Math.abs(delta)} vs prior
     </span>
   );
 }
