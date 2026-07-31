@@ -36,6 +36,9 @@ export default function Home() {
   const [selectedStateGeoid, setSelectedStateGeoid] = useState("06");
   const [selectedCountyGeoid, setSelectedCountyGeoid] = useState("06019");
 
+  const [countyBoundariesLoading, setCountyBoundariesLoading] = useState(false);
+  const [zipBoundariesLoading, setZipBoundariesLoading] = useState(false);
+
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<SelectedRegion | null>(null);
   const [range, setRange] = useState<AqiRange>(DEFAULT_RANGE);
@@ -66,12 +69,18 @@ export default function Home() {
 
   // Refetch county boundaries whenever the selected state changes.
   useEffect(() => {
-    fetchCountyBoundaries(selectedStateGeoid).then((b) => { if (b) setCountyBoundaries(b); });
+    setCountyBoundariesLoading(true);
+    fetchCountyBoundaries(selectedStateGeoid)
+      .then((b) => { if (b) setCountyBoundaries(b); })
+      .finally(() => setCountyBoundariesLoading(false));
   }, [selectedStateGeoid]);
 
   // Refetch ZIP boundaries whenever the selected county changes.
   useEffect(() => {
-    fetchZipBoundaries(selectedCountyGeoid).then((b) => { if (b) setBoundaries(b); });
+    setZipBoundariesLoading(true);
+    fetchZipBoundaries(selectedCountyGeoid)
+      .then((b) => { if (b) setBoundaries(b); })
+      .finally(() => setZipBoundariesLoading(false));
   }, [selectedCountyGeoid]);
 
   const filtered = useMemo(
@@ -234,6 +243,18 @@ export default function Home() {
               <div className="flex flex-col items-center gap-3">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
                 <span className="text-sm text-gray-600">Loading air quality data…</span>
+              </div>
+            </div>
+          )}
+
+          {(countyBoundariesLoading || zipBoundariesLoading) && (
+            <div
+              data-boundary-loading
+              className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2"
+            >
+              <div className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm ring-1 ring-gray-200">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                Loading boundaries…
               </div>
             </div>
           )}

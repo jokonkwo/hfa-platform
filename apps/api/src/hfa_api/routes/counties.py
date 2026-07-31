@@ -11,7 +11,7 @@ from hfa_api.db.connection import query_rows
 router = APIRouter()
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=64)
 def _fetch_county_boundaries(state: str) -> list[dict]:
     """Fetch county GeoJSON features for a state, cached for the process lifetime."""
     rows = query_rows(
