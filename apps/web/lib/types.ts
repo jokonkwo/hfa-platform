@@ -23,6 +23,18 @@ export interface ZipHourly {
   coverage_bins: number;
 }
 
+// Shape returned by GET /v1/search?q=
+export interface SearchResult {
+  type: "state" | "county" | "zip";
+  identifier: string;   // state GEOID ("06"), county GEOID ("06019"), or zip5 ("93701")
+  display_name: string; // "California", "Fresno County, CA", "93701"
+  abbr?: string;        // "CA" for states
+  state_fp?: string;    // "06" for counties (parent state FIPS)
+  bbox?: [number, number, number, number] | null; // [west, south, east, north]
+  lon: number;
+  lat: number;
+}
+
 // Shape returned by GET /v1/zips/{zip}/daily (api_zip_daily view)
 export interface ZipDaily {
   date: string; // "2026-01-21" or "2026-01-21T00:00:00" depending on DuckDB type

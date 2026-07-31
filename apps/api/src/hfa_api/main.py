@@ -8,6 +8,7 @@ from hfa_api.routes.zips import router as zips_router
 from hfa_api.routes.coverage import router as coverage_router
 from hfa_api.routes.counties import router as counties_router
 from hfa_api.routes.states import router as states_router
+from hfa_api.routes.search import router as search_router
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(coverage_router, prefix="/v1/coverage", tags=["coverage"])
     app.include_router(counties_router, prefix="/v1/counties", tags=["counties"])
     app.include_router(states_router, prefix="/v1/states", tags=["states"])
+    app.include_router(search_router, prefix="/v1/search", tags=["search"])
 
     return app
 

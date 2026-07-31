@@ -1,4 +1,4 @@
-import type { ZipNow, ZipHourly, ZipDaily } from "./types";
+import type { ZipNow, ZipHourly, ZipDaily, SearchResult } from "./types";
 import type { BoundaryCollection, CountyBoundaryCollection, StateBoundaryCollection } from "@/components/MapView";
 
 const API_BASE_URL =
@@ -60,10 +60,10 @@ export async function fetchZipHourly(zip: string): Promise<ZipHourly[]> {
   }
 }
 
-// Fetch CA county boundary polygons. Returns null on any failure (non-critical).
-export async function fetchCountyBoundaries(): Promise<CountyBoundaryCollection | null> {
+// Fetch county boundary polygons for a given state (default: CA "06").
+export async function fetchCountyBoundaries(stateGeoid = "06"): Promise<CountyBoundaryCollection | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries`);
+    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries?state=${stateGeoid}`);
     if (!res.ok) return null;
     return (await res.json()) as CountyBoundaryCollection;
   } catch {
@@ -71,14 +71,30 @@ export async function fetchCountyBoundaries(): Promise<CountyBoundaryCollection 
   }
 }
 
-// Fetch ZIP boundary polygons. Returns null on any failure (boundaries are non-critical).
-export async function fetchZipBoundaries(): Promise<BoundaryCollection | null> {
+// Fetch ZIP boundary polygons for a given county (default: Fresno "06019").
+export async function fetchZipBoundaries(countyGeoid = "06019"): Promise<BoundaryCollection | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries`);
+    const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries?county=${countyGeoid}`);
     if (!res.ok) return null;
     return (await res.json()) as BoundaryCollection;
   } catch {
     return null;
+  }
+}
+
+// Search states, counties, and ZIP codes.
+export async function fetchSearch(q: string, signal?: AbortSignal): Promise<SearchResult[]> {
+  if (!q.trim()) return [];
+  try {
+    const res = await fetch(
+      `${API_BASE_URL}/v1/search?q=${encodeURIComponent(q.trim())}`,
+      { signal, cache: "no-store" },
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as unknown;
+    return Array.isArray(data) ? (data as SearchResult[]) : [];
+  } catch {
+    return [];
   }
 }
 

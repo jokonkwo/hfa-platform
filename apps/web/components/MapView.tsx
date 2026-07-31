@@ -4,7 +4,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type * as GeoJSON from "geojson";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import mapboxgl from "mapbox-gl";
-import type { ZipNow } from "@/lib/types";
+import type { ZipNow, SearchResult } from "@/lib/types";
 import { categoryColor, aqiToCategory } from "@/lib/aqi";
 import { ZIP_CENTROIDS, FRESNO_CENTER, FRESNO_ZOOM } from "@/lib/zipCentroids";
 import type { MapTier } from "@/components/TierControl";
@@ -34,6 +34,7 @@ const STATE_OUTLINE = "state-boundary-outline";
 export interface MapViewHandle {
   flyToZip: (zip: string) => void;
   ensureVisible: (tier: MapTier) => void;
+  flyToRegion: (result: SearchResult) => void;
 }
 
 export type BoundaryCollection = GeoJSON.FeatureCollection<
@@ -406,6 +407,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         if (outOfView) {
           map.flyTo({ center: FRESNO_CENTER as [number, number], zoom: Math.max(map.getZoom(), FRESNO_ZOOM), duration: 500 });
         }
+      }
+    },
+    flyToRegion(result: SearchResult) {
+      const map = mapRef.current;
+      if (!map) return;
+      if (result.bbox) {
+        const [west, south, east, north] = result.bbox;
+        map.fitBounds([[west, south], [east, north]], { padding: 40, duration: 600 });
+      } else {
+        map.flyTo({ center: [result.lon, result.lat], zoom: 13, duration: 450 });
       }
     },
   }));

@@ -1,46 +1,54 @@
 "use client";
 
-import { useRef, useState } from "react";
-import type { ZipNow } from "@/lib/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { SearchResult } from "@/lib/types";
+import { fetchSearch } from "@/lib/api";
 
 interface SearchBarProps {
-  rows: ZipNow[];
-  onSelect: (zip: string) => void;
+  onSelect: (result: SearchResult) => void;
 }
 
-export function SearchBar({ rows, onSelect }: SearchBarProps) {
+const TYPE_LABEL: Record<SearchResult["type"], string> = {
+  state: "State",
+  county: "County",
+  zip: "ZIP",
+};
+
+export function SearchBar({ onSelect }: SearchBarProps) {
   const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  const q = query.trim().toLowerCase();
-  const suggestions =
-    q.length === 0
-      ? []
-      : rows
-          .filter(
-            (r) =>
-              r.zip.startsWith(q) ||
-              r.town.toLowerCase().includes(q),
-          )
-          .slice(0, 6);
+  const runSearch = useCallback((q: string) => {
+    abortRef.current?.abort();
+    if (!q.trim()) { setResults([]); return; }
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    fetchSearch(q, ctrl.signal).then((res) => {
+      if (!ctrl.signal.aborted) setResults(res);
+    });
+  }, []);
 
-  function handleSelect(zip: string) {
-    onSelect(zip);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runSearch(query), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [query, runSearch]);
+
+  function handleSelect(result: SearchResult) {
+    onSelect(result);
     setQuery("");
+    setResults([]);
     setOpen(false);
     inputRef.current?.blur();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && suggestions.length > 0) {
-      handleSelect(suggestions[0].zip);
-    }
-    if (e.key === "Escape") {
-      setQuery("");
-      setOpen(false);
-      inputRef.current?.blur();
-    }
+    if (e.key === "Enter" && results.length > 0) handleSelect(results[0]);
+    if (e.key === "Escape") { setQuery(""); setResults([]); setOpen(false); inputRef.current?.blur(); }
   }
 
   return (
@@ -60,33 +68,30 @@ export function SearchBar({ rows, onSelect }: SearchBarProps) {
         ref={inputRef}
         type="text"
         value={query}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={handleKeyDown}
-        placeholder="Search your County, City, or ZIP Code"
+        placeholder="Search state, county, or ZIP code"
         className="min-w-0 flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-400 outline-none"
-        aria-label="Search ZIP codes"
+        aria-label="Search states, counties, and ZIP codes"
         autoComplete="off"
       />
-      {open && suggestions.length > 0 && (
+      {open && results.length > 0 && (
         <ul
           role="listbox"
-          className="absolute left-0 top-full z-50 mt-1 min-w-64 rounded-md border border-gray-200 bg-white shadow-lg"
+          className="absolute left-0 top-full z-50 mt-1 min-w-72 rounded-md border border-gray-200 bg-white shadow-lg"
         >
-          {suggestions.map((r) => (
-            <li key={r.zip} role="option" aria-selected={false}>
+          {results.map((r) => (
+            <li key={`${r.type}-${r.identifier}`} role="option" aria-selected={false}>
               <button
-                onMouseDown={() => handleSelect(r.zip)}
+                onMouseDown={() => handleSelect(r)}
                 className="flex w-full items-center justify-between px-4 py-2.5 text-sm hover:bg-gray-50"
               >
-                <span className="font-medium text-gray-800">
-                  {r.zip} · {r.town}
+                <span className="font-medium text-gray-800">{r.display_name}</span>
+                <span className="ml-4 flex-shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">
+                  {TYPE_LABEL[r.type]}
                 </span>
-                <span className="ml-4 text-xs text-gray-400">AQI {r.aqi}</span>
               </button>
             </li>
           ))}

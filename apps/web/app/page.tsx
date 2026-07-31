@@ -11,7 +11,7 @@ import { TierControl, type MapTier } from "@/components/TierControl";
 import { TableViewModal } from "@/components/TableViewModal";
 import { SearchBar } from "@/components/SearchBar";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
-import type { ZipNow } from "@/lib/types";
+import type { ZipNow, SearchResult } from "@/lib/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
@@ -82,9 +82,13 @@ export default function Home() {
     setSidebarOpen(false);
   }, []);
 
-  const handleSearchSelectZip = useCallback((zip: string) => {
-    if (tier !== "zip") setTier("zip");
-    handleSelectZip(zip);
+  const handleSearchSelect = useCallback((result: SearchResult) => {
+    const targetTier = result.type === "state" ? "state" : result.type === "county" ? "county" : "zip";
+    if (tier !== targetTier) setTier(targetTier);
+    if (result.type === "zip") {
+      handleSelectZip(result.identifier);
+    }
+    mapRef.current?.flyToRegion(result);
   }, [tier, handleSelectZip]);
 
   const handleShare = useCallback(() => {
@@ -124,7 +128,7 @@ export default function Home() {
       {/* Header — reference layout: Search | divider | Tier radios | Share | Filter | About */}
       <header className="relative z-40 flex h-14 flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4">
         {/* Search — grows to fill left portion */}
-        <SearchBar rows={rows} onSelect={handleSearchSelectZip} />
+        <SearchBar onSelect={handleSearchSelect} />
 
         {/* Vertical divider */}
         <div className="h-7 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
