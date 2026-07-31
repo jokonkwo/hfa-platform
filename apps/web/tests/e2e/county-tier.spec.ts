@@ -182,7 +182,7 @@ test.describe("County tier — default view", () => {
 });
 
 test.describe("County tier — click-through to ZIP", () => {
-  test("clicking Fresno County switches to ZIP tier", async ({ page }) => {
+  test("clicking Fresno County opens RegionPanel, keeps county tier", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await waitForCountyBoundaries(page);
@@ -218,20 +218,15 @@ test.describe("County tier — click-through to ZIP", () => {
     // Click Fresno County
     await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
 
-    // Wait for tier to switch to "zip"
+    // Tier must stay county — clicking no longer switches tiers
     type TierW = W & { __hfaTier?: string };
-    await page.waitForFunction(
-      () => (window as TierW).__hfaTier === "zip",
-      { timeout: 5_000, polling: 200 },
-    );
-
+    await page.waitForTimeout(800);
     const tier = await page.evaluate(() => (window as TierW).__hfaTier);
     console.log(`After clicking Fresno County: tier = ${tier}`);
-    expect(tier).toBe("zip");
+    expect(tier).toBe("county");
 
-    // TierControl "ZIP" button should now appear active
-    // The ZIP button text should be visible
-    await expect(page.getByRole("button", { name: "Zip", exact: true })).toBeVisible();
+    // RegionPanel should appear with Fresno County info
+    await expect(page.locator("[data-region-panel]")).toBeVisible({ timeout: 3_000 });
   });
 
   test("TierControl ZIP button switches tier and County button returns", async ({ page }) => {
@@ -264,7 +259,7 @@ test.describe("County tier — click-through to ZIP", () => {
     console.log("Switched back to County tier via TierControl ✓");
   });
 
-  test("non-Fresno county click shows no-data popup, does not switch tier", async ({ page }) => {
+  test("non-Fresno county click opens RegionPanel, does not switch tier", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await waitForCountyBoundaries(page);
@@ -289,21 +284,21 @@ test.describe("County tier — click-through to ZIP", () => {
     }
 
     await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
-    await page.waitForTimeout(800); // allow popup to appear
+    await page.waitForTimeout(800);
 
-    // Tier should still be county
+    // Tier should still be county — clicking no longer switches tiers
     const tier = await page.evaluate(
       () => (window as W & { __hfaTier?: string }).__hfaTier,
     );
     expect(tier, "clicking non-Fresno county should not change tier").toBe("county");
 
-    // Popup should appear with no-data message
-    const popup = page.locator(".mapboxgl-popup");
-    const visible = await popup.isVisible();
+    // RegionPanel should open (no-data state for non-pilot county)
+    const panel = page.locator("[data-region-panel]");
+    const visible = await panel.isVisible();
     if (visible) {
-      const popupText = await popup.innerText();
-      console.log(`Non-Fresno county popup: "${popupText.substring(0, 80)}"`);
-      expect(popupText.toLowerCase()).toMatch(/no sensor data|no data/i);
+      const panelText = await panel.innerText();
+      console.log(`Non-Fresno county RegionPanel: "${panelText.substring(0, 80)}"`);
+      expect(panelText.toLowerCase()).toMatch(/no sensor data|no data/i);
     }
   });
 });
@@ -375,7 +370,7 @@ test.describe("State tier", () => {
     }
   });
 
-  test("clicking California in state tier switches to county tier", async ({ page }) => {
+  test("clicking California in state tier opens RegionPanel, keeps state tier", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
     await switchToStateTier(page);
@@ -421,13 +416,14 @@ test.describe("State tier", () => {
 
     await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
 
+    // Tier must stay state — clicking no longer switches tiers
     type TierW = W & { __hfaTier?: string };
-    await page.waitForFunction(
-      () => (window as TierW).__hfaTier === "county",
-      { timeout: 5_000, polling: 200 },
-    );
+    await page.waitForTimeout(800);
     const tier = await page.evaluate(() => (window as TierW).__hfaTier);
     console.log(`After clicking CA in state tier: tier = ${tier}`);
-    expect(tier).toBe("county");
+    expect(tier).toBe("state");
+
+    // RegionPanel should open with California info
+    await expect(page.locator("[data-region-panel]")).toBeVisible({ timeout: 3_000 });
   });
 });

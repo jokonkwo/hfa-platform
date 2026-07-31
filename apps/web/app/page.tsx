@@ -10,6 +10,7 @@ import { AboutPanel } from "@/components/AboutPanel";
 import { TierControl, type MapTier } from "@/components/TierControl";
 import { TableViewModal } from "@/components/TableViewModal";
 import { SearchBar } from "@/components/SearchBar";
+import { RegionPanel, type SelectedRegion } from "@/components/RegionPanel";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow, SearchResult } from "@/lib/types";
 
@@ -36,6 +37,7 @@ export default function Home() {
   const [selectedCountyGeoid, setSelectedCountyGeoid] = useState("06019");
 
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<SelectedRegion | null>(null);
   const [range, setRange] = useState<AqiRange>(DEFAULT_RANGE);
   const [filterOpen, setFilterOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -119,18 +121,16 @@ export default function Home() {
     mapRef.current?.ensureVisible(newTier);
   }, []);
 
-  // Clicking a state → switch to county tier for that state.
-  const handleStateClick = useCallback((geoid: string) => {
+  // Map click on a state → update context + open RegionPanel, no tier switch.
+  const handleStateSelect = useCallback((geoid: string, name: string) => {
     setSelectedStateGeoid(geoid);
-    setTier("county");
-    mapRef.current?.ensureVisible("county");
+    setSelectedRegion({ type: "state", geoid, name });
   }, []);
 
-  // Clicking a county → switch to ZIP tier for that county.
-  const handleCountyClick = useCallback((geoid: string) => {
+  // Map click on a county → update context + open RegionPanel, no tier switch.
+  const handleCountySelect = useCallback((geoid: string, name: string) => {
     setSelectedCountyGeoid(geoid);
-    setTier("zip");
-    mapRef.current?.ensureVisible("zip");
+    setSelectedRegion({ type: "county", geoid, name });
   }, []);
 
   // Clicking a sidebar row in non-zip tier auto-switches to ZIP tier.
@@ -223,8 +223,8 @@ export default function Home() {
             selectedStateGeoid={selectedStateGeoid}
             selectedCountyGeoid={selectedCountyGeoid}
             onSelectZip={handleSelectZip}
-            onCountyClick={handleCountyClick}
-            onStateClick={handleStateClick}
+            onStateSelect={handleStateSelect}
+            onCountySelect={handleCountySelect}
           />
 
           {state === "loading" && (
@@ -247,6 +247,12 @@ export default function Home() {
               Air quality data unavailable — ingestion paused. Historical data shown when available.
             </div>
           )}
+
+          <RegionPanel
+            region={selectedRegion}
+            fresnoAvgAqi={fresnoAvgAqi}
+            onClose={() => setSelectedRegion(null)}
+          />
 
           <FilterPanel open={filterOpen} range={range} onChange={setRange} onClose={() => setFilterOpen(false)} />
         </main>

@@ -292,20 +292,19 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
 // ── Tooltip HTML helpers ───────────────────────────────────────────────────
 
 function stateTooltipHtml(name: string, isCalifornia: boolean, fresnoAvgAqi: number | null): string {
-  if (isCalifornia) {
-    const aqiLine = fresnoAvgAqi !== null
-      ? `<br/><span style="font-weight:600">Avg AQI ${fresnoAvgAqi}</span><span style="color:#6b7280"> across pilot ZIPs</span><br/><span style="font-size:11px;color:#2563eb">Click to explore counties →</span>`
-      : `<br/><span style="color:#9ca3af">Air quality data available</span><br/><span style="font-size:11px;color:#2563eb">Click to explore counties →</span>`;
-    return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span>${aqiLine}</div>`;
-  }
-  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span><br/><span style="color:#9ca3af">No program data</span></div>`;
+  const aqiLine = isCalifornia && fresnoAvgAqi !== null
+    ? `<br/><span style="font-weight:600">Avg AQI ${fresnoAvgAqi}</span><span style="color:#6b7280"> across pilot ZIPs</span>`
+    : isCalifornia
+    ? `<br/><span style="color:#9ca3af">Air quality data available</span>`
+    : `<br/><span style="color:#9ca3af">No program data yet</span>`;
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span>${aqiLine}<br/><span style="font-size:11px;color:#2563eb">Click for summary →</span></div>`;
 }
 
 function countyTooltipHtml(namelsad: string, hasData: number, avgAqi: number | null): string {
-  if (hasData) {
-    return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span><br/><span style="font-weight:600">Avg AQI ${avgAqi ?? "—"}</span><span style="color:#6b7280"> across pilot ZIPs</span><br/><span style="font-size:11px;color:#2563eb">Click to explore ZIPs →</span></div>`;
-  }
-  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span><br/><span style="color:#9ca3af">No sensor data yet</span></div>`;
+  const aqiLine = hasData
+    ? `<br/><span style="font-weight:600">Avg AQI ${avgAqi ?? "—"}</span><span style="color:#6b7280"> across pilot ZIPs</span>`
+    : `<br/><span style="color:#9ca3af">No sensor data yet</span>`;
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span>${aqiLine}<br/><span style="font-size:11px;color:#2563eb">Click for summary →</span></div>`;
 }
 
 function zipTooltipHtml(zip: string, town: string | null, hasData: number, aqi: number | null, category: string | null): string {
@@ -327,14 +326,14 @@ interface MapViewProps {
   selectedStateGeoid?: string;
   selectedCountyGeoid?: string;
   onSelectZip: (zip: string) => void;
-  onCountyClick: (geoid: string) => void;
-  onStateClick: (geoid: string) => void;
+  onStateSelect: (geoid: string, name: string) => void;
+  onCountySelect: (geoid: string, name: string) => void;
 }
 
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   { data, boundaries, countyBoundaries, stateBoundaries, tier, fresnoAvgAqi,
     selectedStateGeoid = "06", selectedCountyGeoid = "06019",
-    onSelectZip, onCountyClick, onStateClick },
+    onSelectZip, onStateSelect, onCountySelect },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -352,8 +351,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const selectedStateGeoidRef = useRef(selectedStateGeoid);
   const selectedCountyGeoidRef = useRef(selectedCountyGeoid);
   const onSelectRef = useRef(onSelectZip);
-  const onCountyClickRef = useRef(onCountyClick);
-  const onStateClickRef = useRef(onStateClick);
+  const onStateSelectRef = useRef(onStateSelect);
+  const onCountySelectRef = useRef(onCountySelect);
 
   // Hover ID refs — cleared on tier change so stale hover state doesn't persist.
   const hoveredStateIdRef = useRef<string | number | undefined>(undefined);
@@ -369,8 +368,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   selectedStateGeoidRef.current = selectedStateGeoid;
   selectedCountyGeoidRef.current = selectedCountyGeoid;
   onSelectRef.current = onSelectZip;
-  onCountyClickRef.current = onCountyClick;
-  onStateClickRef.current = onStateClick;
+  onStateSelectRef.current = onStateSelect;
+  onCountySelectRef.current = onCountySelect;
 
   useImperativeHandle(ref, () => ({
     flyToZip(zip: string) {
@@ -617,13 +616,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           if (!feature) return;
           const props = (feature.properties ?? {}) as { geoid: string; name: string; isCalifornia: boolean };
           popupRef.current?.remove();
-          if (props.isCalifornia) {
-            onStateClickRef.current(props.geoid ?? "06");
-          } else {
-            const html = `<div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:160px;"><div style="font-size:15px;font-weight:700;">${props.name}</div><div style="font-size:12px;color:#4b5563;margin-top:4px;">No program coverage yet.</div><div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4;">California is the current pilot state.</div></div>`;
-            popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
-              .setLngLat(e.lngLat).setHTML(html).addTo(map);
-          }
+          onStateSelectRef.current(props.geoid ?? "", props.name ?? "");
         });
 
         // County layer
@@ -669,13 +662,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           if (!feature) return;
           const props = (feature.properties ?? {}) as { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null };
           popupRef.current?.remove();
-          if (props.hasData) {
-            onCountyClickRef.current(props.geoid);
-          } else {
-            const html = `<div style="font-family:system-ui,sans-serif;padding:10px 12px;min-width:180px;"><div style="font-size:15px;font-weight:700;">${props.namelsad}</div><div style="font-size:12px;color:#4b5563;margin-top:4px;">No sensor data available yet.</div><div style="font-size:11px;color:#6b7280;margin-top:6px;line-height:1.4;">Fresno County is the current pilot area. Other CA counties will be added as the program expands.</div></div>`;
-            popupRef.current = new mapboxgl.Popup({ closeButton: true, offset: 14 })
-              .setLngLat(e.lngLat).setHTML(html).addTo(map);
-          }
+          onCountySelectRef.current(props.geoid, props.namelsad ?? props.name ?? "");
         });
 
         // ZIP boundary layer
