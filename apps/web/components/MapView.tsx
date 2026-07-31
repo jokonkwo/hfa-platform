@@ -35,6 +35,7 @@ export interface MapViewHandle {
   flyToZip: (zip: string) => void;
   ensureVisible: (tier: MapTier) => void;
   flyToRegion: (result: SearchResult) => void;
+  fitToGeoid: (type: "state" | "county", geoid: string) => void;
 }
 
 export type BoundaryCollection = GeoJSON.FeatureCollection<
@@ -439,6 +440,25 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         map.flyTo({ center: [result.lon, result.lat], zoom: 13, duration: 450 });
       }
     },
+    fitToGeoid(type: "state" | "county", geoid: string) {
+      const map = mapRef.current;
+      if (!map) return;
+      if (type === "state") {
+        const feature = stateBoundariesRef.current?.features.find(
+          (f) => f.properties.GEOID === geoid,
+        );
+        if (feature) {
+          map.fitBounds(geomBbox(feature.geometry), { padding: 60, duration: 600, maxZoom: 7 });
+        }
+      } else {
+        const feature = countyBoundariesRef.current?.features.find(
+          (f) => f.properties.GEOID === geoid,
+        );
+        if (feature) {
+          map.fitBounds(geomBbox(feature.geometry), { padding: 60, duration: 600, maxZoom: 11 });
+        }
+      }
+    },
   }));
 
   // ── Sync functions: just setData; layers are added at map load ───────────
@@ -611,7 +631,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         });
 
         map.on("click", STATE_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
-          if (tierRef.current !== "state") return;
+          // Allow in state tier (primary) and county tier (adjacent state selection).
+          const currentTier = tierRef.current;
+          if (currentTier !== "state" && currentTier !== "county") return;
           const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature) return;
           const props = (feature.properties ?? {}) as { geoid: string; name: string; isCalifornia: boolean };
@@ -657,7 +679,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         });
 
         map.on("click", COUNTY_FILL, (e: mapboxgl.MapLayerMouseEvent) => {
-          if (tierRef.current !== "county") return;
+          // Allow in county tier (primary) and zip tier (background county re-selection).
+          const currentTier = tierRef.current;
+          if (currentTier !== "county" && currentTier !== "zip") return;
           const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature) return;
           const props = (feature.properties ?? {}) as { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null };

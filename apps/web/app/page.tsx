@@ -121,16 +121,18 @@ export default function Home() {
     mapRef.current?.ensureVisible(newTier);
   }, []);
 
-  // Map click on a state → update context + open RegionPanel, no tier switch.
+  // Map click on a state → update context + zoom + open RegionPanel, no tier switch.
   const handleStateSelect = useCallback((geoid: string, name: string) => {
     setSelectedStateGeoid(geoid);
     setSelectedRegion({ type: "state", geoid, name });
+    mapRef.current?.fitToGeoid("state", geoid);
   }, []);
 
-  // Map click on a county → update context + open RegionPanel, no tier switch.
+  // Map click on a county → update context + zoom + open RegionPanel, no tier switch.
   const handleCountySelect = useCallback((geoid: string, name: string) => {
     setSelectedCountyGeoid(geoid);
     setSelectedRegion({ type: "county", geoid, name });
+    mapRef.current?.fitToGeoid("county", geoid);
   }, []);
 
   // Clicking a sidebar row in non-zip tier auto-switches to ZIP tier.
