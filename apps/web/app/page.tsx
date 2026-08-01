@@ -38,6 +38,7 @@ export default function Home() {
 
   const [countyBoundariesLoading, setCountyBoundariesLoading] = useState(false);
   const [zipBoundariesLoading, setZipBoundariesLoading] = useState(false);
+  const [tooltipEnabled, setTooltipEnabled] = useState(true);
 
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<SelectedRegion | null>(null);
@@ -233,6 +234,7 @@ export default function Home() {
             fresnoAvgAqi={fresnoAvgAqi}
             selectedStateGeoid={selectedStateGeoid}
             selectedCountyGeoid={selectedCountyGeoid}
+            tooltipEnabled={tooltipEnabled}
             onSelectZip={handleSelectZip}
             onStateSelect={handleStateSelect}
             onCountySelect={handleCountySelect}
@@ -258,6 +260,25 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* Tooltip toggle — bottom-left of map, Reventure-style */}
+          <div className="pointer-events-auto absolute bottom-8 left-2 z-20">
+            <button
+              onClick={() => setTooltipEnabled((v) => !v)}
+              aria-pressed={tooltipEnabled}
+              aria-label="Toggle hover tooltip"
+              className="flex items-center gap-2 rounded-full bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-50"
+            >
+              <span
+                className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ${tooltipEnabled ? "bg-blue-500" : "bg-gray-300"}`}
+              >
+                <span
+                  className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform duration-200 ${tooltipEnabled ? "translate-x-3.5" : "translate-x-0.5"}`}
+                />
+              </span>
+              Tooltip
+            </button>
+          </div>
 
           {state === "error" && (
             <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg">

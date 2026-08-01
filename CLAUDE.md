@@ -179,7 +179,25 @@ Adding an orchestrator now would impose infra overhead (a running scheduler proc
 
 ---
 
-## 8. Subagents (start with these two, add more as needed)
+## 8. AQI legend — settled design decision (do not silently revisit)
+
+**Decision:** Keep the 6-category EPA AQI color legend — Good / Moderate / Unhealthy for Sensitive Groups / Unhealthy / Very Unhealthy / Hazardous — with the fixed breakpoints defined in the EPA standard (0–50 / 51–100 / 101–150 / 151–200 / 201–300 / 301+).
+
+**Do not switch to a continuous min/max gradient.** The Reventure.app convention (real-estate relative ranking with a min→max color ramp) is designed for showing relative position, not absolute public-health risk. Air quality is a regulatory domain with established public communication norms — "Good" (green), "Hazardous" (maroon) are exactly what users see on AirNow and expect on any air quality product. A continuous gradient would destroy that recognizable vocabulary.
+
+**Implemented in:**
+- `apps/web/lib/aqi.ts` — `AQI_CATEGORIES` array (6 entries, pastel palette), `categoryColor()`, `aqiToCategory()`, `pm25ToAqi()`
+- `apps/web/components/Sidebar.tsx` — "AQI Legend" section renders the 6 categories with swatches and ranges
+- Map fill colors driven by `categoryColor()` at all three tiers (state, county, ZIP)
+
+**Colors (pastel, chosen for readability on Mapbox Outdoors basemap):**
+Good `#8FE3A8` · Moderate `#FCE083` · USG `#F5B375` · Unhealthy `#EF8C8C` · Very Unhealthy `#B994D1` · Hazardous `#8B4B5C`
+
+**Reconsider only if:** The product explicitly pivots away from public-health communication toward real-estate or comparative-ranking use cases.
+
+---
+
+## 9. Subagents (start with these two, add more as needed)
 
 - `api-contract-agent` — owns `apps/api/`, keeps endpoints in sync with `docs/data_contract.md` and the `api_*` view shapes in HFA_DEV.
 - `qa-review-agent` — read-only, reviews diffs against the spec, data contract, and deployed schema before merge.

@@ -326,6 +326,7 @@ interface MapViewProps {
   fresnoAvgAqi: number | null;
   selectedStateGeoid?: string;
   selectedCountyGeoid?: string;
+  tooltipEnabled?: boolean;
   onSelectZip: (zip: string) => void;
   onStateSelect: (geoid: string, name: string) => void;
   onCountySelect: (geoid: string, name: string) => void;
@@ -334,6 +335,7 @@ interface MapViewProps {
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   { data, boundaries, countyBoundaries, stateBoundaries, tier, fresnoAvgAqi,
     selectedStateGeoid = "06", selectedCountyGeoid = "06019",
+    tooltipEnabled = true,
     onSelectZip, onStateSelect, onCountySelect },
   ref,
 ) {
@@ -351,6 +353,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const fresnoAvgAqiRef = useRef<number | null>(fresnoAvgAqi);
   const selectedStateGeoidRef = useRef(selectedStateGeoid);
   const selectedCountyGeoidRef = useRef(selectedCountyGeoid);
+  const tooltipEnabledRef = useRef(tooltipEnabled);
   const onSelectRef = useRef(onSelectZip);
   const onStateSelectRef = useRef(onStateSelect);
   const onCountySelectRef = useRef(onCountySelect);
@@ -368,6 +371,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   fresnoAvgAqiRef.current = fresnoAvgAqi;
   selectedStateGeoidRef.current = selectedStateGeoid;
   selectedCountyGeoidRef.current = selectedCountyGeoid;
+  tooltipEnabledRef.current = tooltipEnabled;
   onSelectRef.current = onSelectZip;
   onStateSelectRef.current = onStateSelect;
   onCountySelectRef.current = onCountySelect;
@@ -598,6 +602,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           if (tierRef.current !== "state") return;
           const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature || feature.id == null) return;
+          if (!tooltipEnabledRef.current) return;
           const fid = feature.id as string | number;
           if (hoveredStateIdRef.current !== undefined && hoveredStateIdRef.current !== fid) {
             map.setFeatureState({ source: STATE_SOURCE, id: hoveredStateIdRef.current }, { hover: false });
@@ -646,6 +651,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           if (tierRef.current !== "county") return;
           const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature || feature.id == null) return;
+          if (!tooltipEnabledRef.current) return;
           const fid = feature.id as string | number;
           if (hoveredCountyIdRef.current !== undefined && hoveredCountyIdRef.current !== fid) {
             map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyIdRef.current }, { hover: false });
@@ -694,6 +700,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           if (tierRef.current !== "zip") return;
           const feature = e.features?.[0] as mapboxgl.GeoJSONFeature | undefined;
           if (!feature || feature.id == null) return;
+          if (!tooltipEnabledRef.current) return;
           const fid = feature.id as string | number;
           if (hoveredZipIdRef.current !== undefined && hoveredZipIdRef.current !== fid) {
             map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredZipIdRef.current }, { hover: false });
@@ -824,6 +831,27 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (stateBoundariesRef.current) syncStateBoundaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fresnoAvgAqi]);
+
+  // ── Clear hover state when tooltip is disabled ─────────────────────────
+  useEffect(() => {
+    if (tooltipEnabled) return;
+    const map = mapRef.current;
+    if (!map || !readyRef.current) return;
+    if (hoveredStateIdRef.current !== undefined) {
+      map.setFeatureState({ source: STATE_SOURCE, id: hoveredStateIdRef.current }, { hover: false });
+      hoveredStateIdRef.current = undefined;
+    }
+    if (hoveredCountyIdRef.current !== undefined) {
+      map.setFeatureState({ source: COUNTY_SOURCE, id: hoveredCountyIdRef.current }, { hover: false });
+      hoveredCountyIdRef.current = undefined;
+    }
+    if (hoveredZipIdRef.current !== undefined) {
+      map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: hoveredZipIdRef.current }, { hover: false });
+      hoveredZipIdRef.current = undefined;
+    }
+    if (tooltipRef.current) tooltipRef.current.style.display = "none";
+    map.getCanvas().style.cursor = "";
+  }, [tooltipEnabled]);
 
   // ── Apply tier styling + clear stale hover when tier changes ───────────
   useEffect(() => {
