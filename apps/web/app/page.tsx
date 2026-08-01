@@ -106,13 +106,19 @@ export default function Home() {
   }, []);
 
   const handleSearchSelect = useCallback((result: SearchResult) => {
-    const targetTier = result.type === "state" ? "state" : result.type === "county" ? "county" : "zip";
-    if (tier !== targetTier) setTier(targetTier);
     if (result.type === "state") {
+      if (tier !== "state") setTier("state");
       setSelectedStateGeoid(result.identifier);
     } else if (result.type === "county") {
+      if (tier !== "county") setTier("county");
       if (result.state_fp) setSelectedStateGeoid(result.state_fp);
       setSelectedCountyGeoid(result.identifier);
+    } else if (result.type === "place") {
+      // Navigate to the city's containing county in ZIP tier — closest meaningful
+      // match in the current data model (no dedicated metro/city tier).
+      if (tier !== "zip") setTier("zip");
+      if (result.state_fp) setSelectedStateGeoid(result.state_fp);
+      if (result.county_geoid) setSelectedCountyGeoid(result.county_geoid);
     } else {
       handleSelectZip(result.identifier);
     }

@@ -192,27 +192,35 @@ The frontend uses this for the **state tier** of the drill-down map hierarchy. C
 }
 ```
 
-### `GET /v1/search?q=` — national search for states, counties, and ZIP codes
+### `GET /v1/search?q=` — national search for states, counties, cities, and ZIP codes
 
 **Query params:** `?q=` (required, 1–100 chars). No `Cache-Control` — responses include `Cache-Control: no-store`.
 
-Queries `raw_us_states`, `raw_us_counties`, and `raw_us_zctas` in HFA_DEV. Returns up to 10 results (3 states + 5 counties + 5 ZIPs, deduped by order). Registered under `apps/api/src/hfa_api/routes/search.py`.
+Queries `raw_us_states`, `raw_us_counties`, `raw_us_zctas`, and `raw_us_places` in HFA_DEV. Returns up to 10 results. Registered under `apps/api/src/hfa_api/routes/search.py`.
 
 **Result type rules:**
-- **States**: abbreviation exact-match (any length) OR name substring (≥3 chars)
-- **Counties**: name/full-name substring (≥3 chars only)
-- **ZIPs**: prefix match on `zip5` (numeric queries only, any length)
+- **States**: abbreviation exact-match (any length) OR name substring (≥3 chars); up to 3 results
+- **Counties**: name/full-name substring (≥3 chars only); up to 5 results
+- **ZIPs**: prefix match on `zip5` (numeric queries only, any length); up to 5 results
+- **Places (cities/towns)**: name substring (≥3 chars, non-numeric only); up to 5 results
+
+**Selection behavior by type:**
+- `state` → switches to State tier, zooms to selected state
+- `county` → switches to County tier, loads that state's counties, zooms to selected county
+- `zip` → flies to centroid at zoom 13
+- `place` → switches to ZIP tier, loads that city's containing county ZIPs, flies to city centroid at zoom 11
 
 Each result object:
 
 | Field | Type | Notes |
 |---|---|---|
-| `type` | `"state" \| "county" \| "zip"` | Result category |
-| `identifier` | string | State GEOID (`"06"`), county GEOID (`"06019"`), or zip5 (`"93701"`) |
-| `display_name` | string | `"California"`, `"Fresno County, CA"`, or `"93701"` |
-| `abbr` | string \| null | State abbreviation (`"CA"`) for states; `null` for counties and ZIPs |
-| `state_fp` | string \| null | 2-digit state FIPS (`"06"`) for counties; `null` for states and ZIPs |
-| `bbox` | [west, south, east, north] \| null | Bounding box for states and counties; `null` for ZIPs |
+| `type` | `"state" \| "county" \| "zip" \| "place"` | Result category |
+| `identifier` | string | State GEOID (`"06"`), county GEOID (`"06019"`), zip5 (`"93701"`), or place GEOID (`"0627000"`) |
+| `display_name` | string | `"California"`, `"Fresno County, CA"`, `"93701"`, `"Fresno, CA"` |
+| `abbr` | string \| null | State abbreviation (`"CA"`) for states; `null` otherwise |
+| `state_fp` | string \| null | 2-digit state FIPS for counties and places; `null` for states and ZIPs |
+| `county_geoid` | string \| null | 5-digit county FIPS for places (containing county — drives ZIP boundary fetch); `null` for other types |
+| `bbox` | [west, south, east, north] \| null | Bounding box for states and counties; `null` for ZIPs and places |
 | `lon` | number | Centroid longitude |
 | `lat` | number | Centroid latitude |
 
@@ -224,6 +232,7 @@ Each result object:
     "display_name": "California",
     "abbr": "CA",
     "state_fp": null,
+    "county_geoid": null,
     "bbox": [-124.4820, 32.5288, -114.1312, 42.0095],
     "lon": -119.4696,
     "lat": 37.1841
@@ -234,9 +243,21 @@ Each result object:
     "display_name": "Fresno County, CA",
     "abbr": null,
     "state_fp": "06",
+    "county_geoid": null,
     "bbox": [-120.5260, 35.7817, -118.3544, 37.5778],
     "lon": -119.6490,
     "lat": 36.7378
+  },
+  {
+    "type": "place",
+    "identifier": "0627000",
+    "display_name": "Fresno, CA",
+    "abbr": null,
+    "state_fp": "06",
+    "county_geoid": "06019",
+    "bbox": null,
+    "lon": -119.7938,
+    "lat": 36.7831
   },
   {
     "type": "zip",
@@ -244,6 +265,7 @@ Each result object:
     "display_name": "93701",
     "abbr": null,
     "state_fp": null,
+    "county_geoid": null,
     "bbox": null,
     "lon": -119.7834,
     "lat": 36.7469
@@ -381,6 +403,35 @@ Array ordered by `date DESC`. May be empty if no daily data exists for that ZIP.
 ```
 
 Single object. Returns 404 if no discovery data available for today.
+
+---
+
+---
+
+## Reference Tables (static — not part of the ETL pipeline)
+
+These tables are loaded once via one-time import scripts in `pipelines/ingestion/geo/` and do not change unless a new Census release is imported.
+
+### `raw_us_places`
+**Source:** Census Bureau Cartographic Boundary 2024 (500k scale) — `cb_2024_us_place_500k.zip`  
+**Loaded by:** `pipelines/ingestion/geo/load_places.py`  
+**Rows:** 32,612 US incorporated places and Census-Designated Places (CDPs)  
+**Storage:** ~1.6 MB (metadata only — no polygon geometry stored)
+
+| Column | Type | Notes |
+|---|---|---|
+| `place_geoid` | VARCHAR | 7-digit FIPS (`state_fp` 2 + `placefp` 5), e.g. `"0627000"` for Fresno, CA |
+| `name` | VARCHAR | Place name, e.g. `"Fresno"` |
+| `name_lsad` | VARCHAR | Full legal name, e.g. `"Fresno city"` |
+| `state_fp` | VARCHAR | 2-digit state FIPS |
+| `lsad` | VARCHAR | Legal/statistical area description code (e.g. `"25"` = city) |
+| `centroid_lon` | DOUBLE | Precomputed centroid longitude (rounded to 6 decimal places) |
+| `centroid_lat` | DOUBLE | Precomputed centroid latitude (rounded to 6 decimal places) |
+| `county_geoid` | VARCHAR | 5-digit FIPS of containing county (resolved via `ST_Within` spatial join at import time); NULL for 1 coastal/border place |
+
+**Why no geometry:** Search only needs centroid + county lookup. Storing the polygon for 32,612 places would add ~60–100 MB with no benefit. The `county_geoid` is precomputed at import time via a one-time spatial join against `raw_us_counties` so search queries have zero spatial overhead.
+
+**Used by:** `GET /v1/search?q=` (place result type)
 
 ---
 

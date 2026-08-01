@@ -25,11 +25,12 @@ export interface ZipHourly {
 
 // Shape returned by GET /v1/search?q=
 export interface SearchResult {
-  type: "state" | "county" | "zip";
-  identifier: string;   // state GEOID ("06"), county GEOID ("06019"), or zip5 ("93701")
-  display_name: string; // "California", "Fresno County, CA", "93701"
+  type: "state" | "county" | "zip" | "place";
+  identifier: string;   // state GEOID ("06"), county GEOID ("06019"), zip5 ("93701"), or place_geoid ("0619000")
+  display_name: string; // "California", "Fresno County, CA", "93701", "Fresno, CA"
   abbr?: string;        // "CA" for states
-  state_fp?: string;    // "06" for counties (parent state FIPS)
+  state_fp?: string;    // "06" for counties and places (parent state FIPS)
+  county_geoid?: string; // "06019" for places (containing county — drives ZIP boundary fetch)
   bbox?: [number, number, number, number] | null; // [west, south, east, north]
   lon: number;
   lat: number;

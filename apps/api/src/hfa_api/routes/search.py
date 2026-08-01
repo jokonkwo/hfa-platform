@@ -33,6 +33,7 @@ def _search_states(q_like: str, q_exact: str) -> list[dict]:
             "display_name": name,
             "abbr": abbr,
             "state_fp": None,
+            "county_geoid": None,
             "bbox": [float(w), float(s), float(e), float(n)],
             "lon": float(lon),
             "lat": float(lat),
@@ -64,6 +65,7 @@ def _search_counties(q_like: str) -> list[dict]:
             "display_name": f"{name_lsad}, {state_abbr}",
             "abbr": None,
             "state_fp": state_fp,
+            "county_geoid": None,
             "bbox": [float(w), float(s), float(e), float(n)],
             "lon": float(lon),
             "lat": float(lat),
@@ -92,6 +94,7 @@ def _search_zips(prefix: str) -> list[dict]:
             "display_name": zip5,
             "abbr": None,
             "state_fp": None,
+            "county_geoid": None,
             "bbox": None,
             "lon": float(lon),
             "lat": float(lat),
@@ -100,7 +103,38 @@ def _search_zips(prefix: str) -> list[dict]:
     ]
 
 
-@router.get("", summary="Search states, counties, and ZIP codes")
+def _search_places(q_like: str) -> list[dict]:
+    rows = query_rows(
+        """
+        SELECT p.place_geoid, p.name, p.name_lsad, p.state_fp, p.county_geoid,
+               p.centroid_lon, p.centroid_lat,
+               s.state_abbr
+        FROM raw_us_places p
+        JOIN raw_us_states s ON s.state_fp = p.state_fp
+        WHERE LOWER(p.name) LIKE ?
+          AND p.county_geoid IS NOT NULL
+        ORDER BY LENGTH(p.name), p.name
+        LIMIT 5
+        """,
+        [q_like],
+    )
+    return [
+        {
+            "type": "place",
+            "identifier": place_geoid,
+            "display_name": f"{name}, {state_abbr}",
+            "abbr": None,
+            "state_fp": state_fp,
+            "county_geoid": county_geoid,
+            "bbox": None,
+            "lon": float(centroid_lon),
+            "lat": float(centroid_lat),
+        }
+        for place_geoid, name, name_lsad, state_fp, county_geoid, centroid_lon, centroid_lat, state_abbr in rows
+    ]
+
+
+@router.get("", summary="Search states, counties, ZIP codes, and cities")
 def search_regions(
     q: str = Query(..., min_length=1, max_length=100, description="Search query"),
 ) -> JSONResponse:
@@ -132,6 +166,13 @@ def search_regions(
             results.extend(_search_zips(q))
         except Exception as exc:
             logger.warning("ZIP search error: %s", exc)
+
+    # Places (cities/towns): substring match for 3+ char non-numeric queries
+    if q_len >= 3 and not q.isdigit():
+        try:
+            results.extend(_search_places(q_like))
+        except Exception as exc:
+            logger.warning("Place search error: %s", exc)
 
     return JSONResponse(
         content=results[:10],

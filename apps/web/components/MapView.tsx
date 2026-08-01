@@ -440,6 +440,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       if (result.bbox) {
         const [west, south, east, north] = result.bbox;
         map.fitBounds([[west, south], [east, north]], { padding: 40, duration: 600 });
+      } else if (result.type === "place") {
+        // City/town: zoom to show the surrounding county ZIP context (zoom 11)
+        map.flyTo({ center: [result.lon, result.lat], zoom: 11, duration: 500 });
       } else {
         map.flyTo({ center: [result.lon, result.lat], zoom: 13, duration: 450 });
       }

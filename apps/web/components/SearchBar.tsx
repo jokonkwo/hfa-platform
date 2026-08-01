@@ -12,6 +12,7 @@ const TYPE_LABEL: Record<SearchResult["type"], string> = {
   state: "State",
   county: "County",
   zip: "ZIP",
+  place: "City",
 };
 
 export function SearchBar({ onSelect }: SearchBarProps) {
@@ -72,9 +73,9 @@ export function SearchBar({ onSelect }: SearchBarProps) {
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={handleKeyDown}
-        placeholder="Search state, county, or ZIP code"
+        placeholder="Search state, county, city, or ZIP code"
         className="min-w-0 flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-400 outline-none"
-        aria-label="Search states, counties, and ZIP codes"
+        aria-label="Search states, counties, cities, and ZIP codes"
         autoComplete="off"
       />
       {open && results.length > 0 && (
