@@ -105,6 +105,8 @@ A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the 
 | `raw_us_states` | 56 rows | Census TIGER 2025 US states; columns: `state_fp`, `state_abbr`, `name`, `geoid`, `geom`. Added 2026-07-30. |
 | `raw_us_counties` | 3,235 rows | Census TIGER 2025 US counties; columns: `state_fp`, `county_fp`, `geoid`, `name`, `name_lsad`, `geom`. Added 2026-07-30. |
 | `raw_us_zctas` | 33,791 rows | Census TIGER 2025 US ZCTAs; columns: `zip5`, `geoid`, `geom`. Added 2026-07-30. ~213 MB stored (compressed). |
+| `raw_us_places` | 32,612 rows | Census GENZ 2024 US places (cities/CDPs); columns: `place_geoid`, `name`, `name_lsad`, `state_fp`, `lsad`, `centroid_lon`, `centroid_lat`, `county_geoid`. No geometry stored (centroid + county pre-computed). Added 2026-07-30. |
+| `raw_acs_demographics` | 1,861 rows | ACS 5-Year 2024 demographics for CA: 1 state + 58 counties + 1,802 ZCTAs. Columns: `vintage`, `geography_level`, `geoid`, `name`, `state_fp`, `population`, `median_hh_income`, `median_age`, `poverty_rate_pct`, `ed_less_than_hs_pct`, `unemployment_rate_pct`, `limited_english_pct`, `housing_cost_burden_pct`, `pop_density_per_sq_mi`, `pop_growth_pct`, `income_growth_pct`. Added 2026-08-03. Re-runnable annual refresh (unlike one-time geo imports). |
 
 **No `gold_rankings` equivalent** exists in the deployed database. The repo's `gold_rankings.sql` dbt model has no deployed counterpart.
 
@@ -128,6 +130,7 @@ A full pipeline ran Oct 8 – Nov 18 2025 against live PurpleAir data using the 
 - The EPA/Barkjohn correction formula (with temperature)
 - cron-job.org re-enable (ingestion paused — see §2 Scheduling row and `docs/scheduling.md`)
 - Committed DDL/transforms for the deployed bronze/silver/gold tables
+- Playwright tests for the demographics panel and 5-bin color legend (UI-only, no test coverage yet)
 
 ### Open question on the discovery → ingestion handoff
 
