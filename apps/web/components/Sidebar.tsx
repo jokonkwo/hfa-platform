@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { ZipNow } from "@/lib/types";
+import type { ZipNow, DemographicsData } from "@/lib/types";
 import { AQI_CATEGORIES, categoryColor } from "@/lib/aqi";
 import { CategoryBadge } from "./CategoryBadge";
+import { DemographicsPanel } from "./DemographicsPanel";
 
 function InfoTip({ text }: { text: string }) {
   return (
@@ -56,9 +57,11 @@ interface SidebarProps {
   onSelectZip: (zip: string) => void;
   ingestionEmpty: boolean;
   onTableView?: () => void;
+  zipDemographics: DemographicsData | null;
+  allZctaDemographics: DemographicsData[];
 }
 
-export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView }: SidebarProps) {
+export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, zipDemographics, allZctaDemographics }: SidebarProps) {
   const ranked = [...data].sort((a, b) => a.aqi - b.aqi);
 
   return (
@@ -92,24 +95,23 @@ export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView }: Side
       </Section>
 
       {/* Community Context */}
-      <Section title="Community Context" chip="Coming Soon" defaultOpen={false}>
-        <div className="space-y-2">
-          {["Poverty Rate", "Median Age", "Population Density", "Asthma Rate"].map(
-            (label) => (
-              <div
-                key={label}
-                className="pointer-events-none flex items-center gap-2 text-sm text-gray-400 select-none"
-                aria-disabled="true"
-              >
-                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 bg-gray-100" />
-                <span>{label}</span>
-              </div>
-            ),
-          )}
-          <p className="pt-1 text-[11px] italic text-gray-400">
-            CalEnviroScreen &amp; ACS data — planned for v2
+      <Section title="Community Context" defaultOpen={false}>
+        {zipDemographics && allZctaDemographics.length > 0 ? (
+          <div>
+            <p className="mb-2 text-[10px] text-gray-400 uppercase tracking-wide">
+              ACS 2024 · {zipDemographics.name}
+            </p>
+            <DemographicsPanel
+              data={zipDemographics}
+              allData={allZctaDemographics}
+              compact
+            />
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400 italic">
+            Select a ZIP code on the map to see community context.
           </p>
-        </div>
+        )}
       </Section>
 
       {/* AQI Legend */}

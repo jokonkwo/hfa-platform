@@ -12,7 +12,7 @@ import { TableViewModal } from "@/components/TableViewModal";
 import { SearchBar } from "@/components/SearchBar";
 import { RegionPanel, type SelectedRegion } from "@/components/RegionPanel";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
-import type { ZipNow, SearchResult } from "@/lib/types";
+import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
@@ -24,6 +24,14 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 });
 
 type LoadState = "loading" | "ready" | "error";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
+async function fetchDemographics(path: string): Promise<DemographicsData[]> {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) return [];
+  return res.json();
+}
 
 export default function Home() {
   const [rows, setRows] = useState<ZipNow[]>([]);
@@ -48,9 +56,14 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tableViewOpen, setTableViewOpen] = useState(false);
 
+  // Demographics state
+  const [stateDemographic, setStateDemographic] = useState<DemographicsData | null>(null);
+  const [countyDemographics, setCountyDemographics] = useState<DemographicsData[]>([]);
+  const [zctaDemographics, setZctaDemographics] = useState<DemographicsData[]>([]);
+
   const mapRef = useRef<MapViewHandle | null>(null);
 
-  // Fetch AQI rows and state boundaries once on mount.
+  // Fetch AQI rows, state boundaries, and demographics once on mount.
   useEffect(() => {
     const ctrl = new AbortController();
     fetchZipsNow(ctrl.signal)
@@ -65,6 +78,8 @@ export default function Home() {
         setState("error");
       });
     fetchStateBoundaries().then((b) => { if (b) setStateBoundaries(b); });
+    fetchDemographics("/v1/demographics/states").then((d) => setStateDemographic(d[0] ?? null));
+    fetchDemographics("/v1/demographics/counties").then(setCountyDemographics);
     return () => ctrl.abort();
   }, []);
 
@@ -76,11 +91,17 @@ export default function Home() {
       .finally(() => setCountyBoundariesLoading(false));
   }, [selectedStateGeoid]);
 
-  // Refetch ZIP boundaries whenever the selected county changes.
+  // Refetch ZIP boundaries and ZCTA demographics whenever the selected county changes.
   useEffect(() => {
     setZipBoundariesLoading(true);
     fetchZipBoundaries(selectedCountyGeoid)
-      .then((b) => { if (b) setBoundaries(b); })
+      .then((b) => {
+        if (b) {
+          setBoundaries(b);
+          const geoids = b.features.map((f) => f.properties?.ZCTA5 ?? "").filter(Boolean).join(",");
+          if (geoids) fetchDemographics(`/v1/demographics/zctas?geoids=${geoids}`).then(setZctaDemographics);
+        }
+      })
       .finally(() => setZipBoundariesLoading(false));
   }, [selectedCountyGeoid]);
 
@@ -99,6 +120,17 @@ export default function Home() {
     return Math.round(rows.reduce((sum, r) => sum + r.aqi, 0) / rows.length);
   }, [rows]);
 
+  const selectedZipDemographics = useMemo(
+    () => zctaDemographics.find((d) => d.geoid === selectedZip) ?? null,
+    [zctaDemographics, selectedZip],
+  );
+
+  const regionDemographics = useMemo(() => {
+    if (!selectedRegion) return null;
+    if (selectedRegion.type === "state") return stateDemographic;
+    return countyDemographics.find((d) => d.geoid === selectedRegion.geoid) ?? null;
+  }, [selectedRegion, stateDemographic, countyDemographics]);
+
   const handleSelectZip = useCallback((zip: string) => {
     setSelectedZip(zip);
     mapRef.current?.flyToZip(zip);
@@ -114,8 +146,6 @@ export default function Home() {
       if (result.state_fp) setSelectedStateGeoid(result.state_fp);
       setSelectedCountyGeoid(result.identifier);
     } else if (result.type === "place") {
-      // Navigate to the city's containing county in ZIP tier — closest meaningful
-      // match in the current data model (no dedicated metro/city tier).
       if (tier !== "zip") setTier("zip");
       if (result.state_fp) setSelectedStateGeoid(result.state_fp);
       if (result.county_geoid) setSelectedCountyGeoid(result.county_geoid);
@@ -131,27 +161,23 @@ export default function Home() {
     }
   }, []);
 
-  // Tier change: reveal the new tier in-place. Pan only if detail is out of view.
   const handleTierChange = useCallback((newTier: MapTier) => {
     setTier(newTier);
     mapRef.current?.ensureVisible(newTier);
   }, []);
 
-  // Map click on a state → update context + zoom + open RegionPanel, no tier switch.
   const handleStateSelect = useCallback((geoid: string, name: string) => {
     setSelectedStateGeoid(geoid);
     setSelectedRegion({ type: "state", geoid, name });
     mapRef.current?.fitToGeoid("state", geoid);
   }, []);
 
-  // Map click on a county → update context + zoom + open RegionPanel, no tier switch.
   const handleCountySelect = useCallback((geoid: string, name: string) => {
     setSelectedCountyGeoid(geoid);
     setSelectedRegion({ type: "county", geoid, name });
     mapRef.current?.fitToGeoid("county", geoid);
   }, []);
 
-  // Clicking a sidebar row in non-zip tier auto-switches to ZIP tier.
   const handleSidebarSelectZip = useCallback((zip: string) => {
     if (tier !== "zip") setTier("zip");
     handleSelectZip(zip);
@@ -161,18 +187,13 @@ export default function Home() {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* Header — reference layout: Search | divider | Tier radios | Share | Filter | About */}
       <header className="relative z-40 flex h-14 flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4">
-        {/* Search — grows to fill left portion */}
         <SearchBar onSelect={handleSearchSelect} />
 
-        {/* Vertical divider */}
         <div className="h-7 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
 
-        {/* Tier radio buttons */}
         <TierControl tier={tier} onChange={handleTierChange} />
 
-        {/* Share button */}
         <button
           onClick={handleShare}
           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
@@ -188,7 +209,6 @@ export default function Home() {
           </svg>
         </button>
 
-        {/* Filter button */}
         <button
           onClick={() => { setFilterOpen((o) => !o); setAboutOpen(false); }}
           className="flex flex-shrink-0 items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -199,7 +219,6 @@ export default function Home() {
           Filter
         </button>
 
-        {/* About — repurposes the avatar slot; accounts deferred */}
         <button
           onClick={() => { setAboutOpen(true); setFilterOpen(false); }}
           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white hover:bg-teal-600"
@@ -210,7 +229,6 @@ export default function Home() {
         </button>
       </header>
 
-      {/* Body */}
       <div className="relative flex flex-1 overflow-hidden">
         <aside
           className={`absolute inset-y-0 left-0 z-30 w-[280px] flex-shrink-0 border-r border-gray-200 bg-white transition-transform duration-300 md:static md:translate-x-0 ${
@@ -222,6 +240,8 @@ export default function Home() {
             onSelectZip={handleSidebarSelectZip}
             ingestionEmpty={ingestionEmpty}
             onTableView={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
+            zipDemographics={selectedZipDemographics}
+            allZctaDemographics={zctaDemographics}
           />
         </aside>
 
@@ -267,7 +287,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Tooltip toggle — bottom-left of map, Reventure-style */}
           <div className="pointer-events-auto absolute bottom-8 left-2 z-20">
             <button
               onClick={() => setTooltipEnabled((v) => !v)}
@@ -301,6 +320,8 @@ export default function Home() {
           <RegionPanel
             region={selectedRegion}
             fresnoAvgAqi={fresnoAvgAqi}
+            demographics={regionDemographics}
+            allDemographics={selectedRegion?.type === "state" ? (stateDemographic ? [stateDemographic] : []) : countyDemographics}
             onClose={() => setSelectedRegion(null)}
           />
 
@@ -316,6 +337,8 @@ export default function Home() {
         tier={tier}
         rows={filtered}
         fresnoAvgAqi={fresnoAvgAqi}
+        countyDemographics={countyDemographics}
+        stateDemographic={stateDemographic}
         onClose={() => setTableViewOpen(false)}
       />
     </div>

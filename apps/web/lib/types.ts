@@ -5,7 +5,7 @@ export interface ZipNow {
   pm25: number;
   aqi: number;
   category: string;
-  population: number | null; // Census ACS hookup — always null until phase 2
+  population: number | null;
   sample_size: number;
   freshness_pct: number;
   qc_badge: string;
@@ -34,6 +34,24 @@ export interface SearchResult {
   bbox?: [number, number, number, number] | null; // [west, south, east, north]
   lon: number;
   lat: number;
+}
+
+// Shape returned by GET /v1/demographics/* endpoints
+export interface DemographicsData {
+  geoid: string;
+  name: string;
+  geography_level: "state" | "county" | "zcta";
+  population: number | null;
+  median_hh_income: number | null;
+  median_age: number | null;
+  poverty_rate_pct: number | null;
+  ed_less_than_hs_pct: number | null;
+  unemployment_rate_pct: number | null;
+  limited_english_pct: number | null;
+  housing_cost_burden_pct: number | null;
+  pop_density_per_sq_mi: number | null;
+  pop_growth_pct: number | null;
+  income_growth_pct: number | null;
 }
 
 // Shape returned by GET /v1/zips/{zip}/daily (api_zip_daily view)

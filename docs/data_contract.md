@@ -341,7 +341,7 @@ Returns a GeoJSON `FeatureCollection` queried at request time from `HFA_DEV.main
 
 Single-ZIP endpoint returns one object (not an array). Returns 404 if ZIP not found.
 
-**`population` field:** Always `null` until phase 2 Census/ACS hookup. The field is present in every response so that when population data lands, it is a data hookup, not a schema change. Frontend renders `null` as `"—"` in the Table View.
+**`population` field:** Always `null` in the `/v1/zips/now` response — the ZIP-level AQI API does not embed population. Population for ZCTAs is served separately via `GET /v1/demographics/zctas`. Frontend renders `null` as `"—"` in the ZIP Table View population column; the separate ZCTA demographics endpoint feeds the Sidebar "Community Context" section.
 
 ### `api_zip_hourly` → `GET /v1/zips/{zip}/hourly`
 
@@ -391,6 +391,86 @@ Array ordered by `date DESC`. May be empty if no daily data exists for that ZIP.
 
 **aqi_exceed_* type quirk:** These BIGINT columns arrive as float64 through pandas (values like `0.0`). Not used in the UI.
 
+### `GET /v1/demographics/states` — ACS state-level demographics
+
+Returns a JSON array with one object: California's ACS 2024 5-Year demographics. Registered under `apps/api/src/hfa_api/routes/demographics.py`.
+
+```json
+[
+  {
+    "geoid": "06",
+    "name": "California",
+    "geography_level": "state",
+    "population": 39287377,
+    "median_hh_income": 99122.0,
+    "median_age": 38.2,
+    "poverty_rate_pct": 11.5,
+    "ed_less_than_hs_pct": 15.2,
+    "unemployment_rate_pct": 4.4,
+    "limited_english_pct": 17.5,
+    "housing_cost_burden_pct": 55.31,
+    "pop_density_per_sq_mi": 239.32,
+    "pop_growth_pct": -0.47,
+    "income_growth_pct": 5.12
+  }
+]
+```
+
+### `GET /v1/demographics/counties` — ACS county-level demographics
+
+**Query params:** `?state_fp=06` (default `"06"` = California). Returns all 58 CA counties.
+
+```json
+[
+  {
+    "geoid": "06019",
+    "name": "Fresno County",
+    "geography_level": "county",
+    "population": 1016725,
+    "median_hh_income": 74201.0,
+    "median_age": 31.8,
+    "poverty_rate_pct": 18.3,
+    "ed_less_than_hs_pct": 24.7,
+    "unemployment_rate_pct": 8.7,
+    "limited_english_pct": 17.7,
+    "housing_cost_burden_pct": 57.2,
+    "pop_density_per_sq_mi": 168.81,
+    "pop_growth_pct": 0.3,
+    "income_growth_pct": 5.0
+  }
+]
+```
+
+### `GET /v1/demographics/zctas` — ACS ZCTA-level demographics (batch)
+
+**Query params:** `?geoids=93701,93702,...` (comma-separated ZCTA geoids, max 200). Returns demographics for each requested ZCTA found in `raw_acs_demographics`. Missing geoids are silently omitted.
+
+```json
+[
+  {
+    "geoid": "93701",
+    "name": "93701",
+    "geography_level": "zcta",
+    "population": 9808,
+    "median_hh_income": 32768.0,
+    "median_age": 33.5,
+    "poverty_rate_pct": 38.5,
+    "ed_less_than_hs_pct": 47.5,
+    "unemployment_rate_pct": 12.9,
+    "limited_english_pct": 31.9,
+    "housing_cost_burden_pct": 62.82,
+    "pop_density_per_sq_mi": 6436.38,
+    "pop_growth_pct": -4.387,
+    "income_growth_pct": 1.789
+  }
+]
+```
+
+**Frontend usage:**
+- State geoid `"06"` → `stateDemographic` state in page.tsx → passed to RegionPanel and StateTable  
+- All 58 counties → `countyDemographics` state → passed to RegionPanel (county selection) and CountyTable  
+- Current county's ZCTA geoids extracted from ZIP boundary `ZCTA5` feature properties → `zctaDemographics` state → `selectedZipDemographics` memoized for Sidebar "Community Context" section  
+
 ### `api_coverage_today` → `GET /v1/coverage/today`
 
 ```json
@@ -405,6 +485,40 @@ Array ordered by `date DESC`. May be empty if no daily data exists for that ZIP.
 Single object. Returns 404 if no discovery data available for today.
 
 ---
+
+---
+
+## Demographics Table (annual refresh)
+
+### `raw_acs_demographics`
+**Source:** US Census Bureau ACS 5-Year Data Profiles (`/data/{vintage}/acs/acs5/profile`)  
+**Loaded by:** `pipelines/ingestion/acs/load_acs_demographics.py`  
+**Rows:** 1,861 rows for vintage 2024 (1 state, 58 counties, 1,802 ZCTAs covering California ZIP prefix 900–961)  
+**Grain:** (vintage, geography_level, geoid)  
+**Refresh cadence:** Annual (run manually once per ACS release cycle)
+
+| Column | Type | Notes |
+|---|---|---|
+| `vintage` | INTEGER | ACS release year (e.g. 2024) |
+| `geography_level` | VARCHAR | `"state"`, `"county"`, or `"zcta"` |
+| `geoid` | VARCHAR | 2-digit state FIPS (`"06"`), 5-digit county FIPS (`"06019"`), or 5-digit ZCTA (`"93701"`) |
+| `name` | VARCHAR | Human-readable name (e.g. `"California"`, `"Fresno County"`) |
+| `state_fp` | VARCHAR | 2-digit state FIPS for all levels |
+| `population` | BIGINT | ACS DP05_0001E — total population |
+| `median_hh_income` | DOUBLE | ACS DP03_0062E — median household income (USD) |
+| `median_age` | DOUBLE | ACS DP05_0018E — median age |
+| `poverty_rate_pct` | DOUBLE | ACS DP03_0128PE — % people below poverty level |
+| `ed_less_than_hs_pct` | DOUBLE | ACS DP02_0060PE + DP02_0061PE — % adults with less than HS diploma |
+| `unemployment_rate_pct` | DOUBLE | ACS DP03_0009PE — civilian unemployment rate |
+| `limited_english_pct` | DOUBLE | ACS DP02_0115PE — % who speak English less than "very well" |
+| `housing_cost_burden_pct` | DOUBLE | Computed: (DP04_0141E + DP04_0142E) / DP04_0136E × 100 — % renters paying 30%+ of income on rent |
+| `pop_density_per_sq_mi` | DOUBLE | Computed via DuckDB spatial JOIN against `raw_us_states`/`raw_us_counties`/`raw_us_zctas` — population per square mile |
+| `pop_growth_pct` | DOUBLE | `(pop_2024 − pop_2023) / pop_2023 × 100` — 1-year population growth |
+| `income_growth_pct` | DOUBLE | `(income_2024 − income_2023) / income_2023 × 100` — 1-year income growth |
+
+**Suppression codes:** Census values -666666666, -999999999, -888888888 are stored as NULL.
+
+**ZCTA coverage note:** ZCTAs are fetched nationally and filtered client-side to CA ZIP prefixes 900–961. All 55 Fresno County ZCTAs are included.
 
 ---
 

@@ -1,5 +1,8 @@
 "use client";
 
+import type { DemographicsData } from "@/lib/types";
+import { DemographicsPanel } from "./DemographicsPanel";
+
 const CA_GEOID = "06";
 const FRESNO_COUNTY_GEOID = "06019";
 
@@ -12,10 +15,12 @@ export interface SelectedRegion {
 interface RegionPanelProps {
   region: SelectedRegion | null;
   fresnoAvgAqi: number | null;
+  demographics: DemographicsData | null;
+  allDemographics: DemographicsData[];
   onClose: () => void;
 }
 
-export function RegionPanel({ region, fresnoAvgAqi, onClose }: RegionPanelProps) {
+export function RegionPanel({ region, fresnoAvgAqi, demographics, allDemographics, onClose }: RegionPanelProps) {
   if (!region) return null;
 
   const hasData =
@@ -27,7 +32,7 @@ export function RegionPanel({ region, fresnoAvgAqi, onClose }: RegionPanelProps)
   return (
     <div
       data-region-panel
-      className="absolute bottom-6 left-6 z-20 w-64 rounded-lg border border-gray-200 bg-white shadow-lg"
+      className="absolute bottom-6 left-6 z-20 w-72 max-h-[70vh] overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg"
     >
       <div className="flex items-start justify-between p-4 pb-3">
         <div className="min-w-0 flex-1">
@@ -66,6 +71,15 @@ export function RegionPanel({ region, fresnoAvgAqi, onClose }: RegionPanelProps)
           </div>
         )}
       </div>
+
+      {demographics && allDemographics.length > 0 && (
+        <div className="border-t border-gray-100 px-4 py-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            Demographics · ACS 2024
+          </p>
+          <DemographicsPanel data={demographics} allData={allDemographics} />
+        </div>
+      )}
     </div>
   );
 }
