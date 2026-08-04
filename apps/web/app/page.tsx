@@ -235,9 +235,6 @@ export default function Home() {
           }`}
         >
           <Sidebar
-            data={filtered}
-            onSelectZip={handleSidebarSelectZip}
-            ingestionEmpty={ingestionEmpty}
             onTableView={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
             activeMetric={activeMetric}
             onMetricChange={setActiveMetric}

@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { ZipNow, DemographicsData } from "@/lib/types";
-import { AQI_CATEGORIES, categoryColor } from "@/lib/aqi";
-import { CategoryBadge } from "./CategoryBadge";
+import type { DemographicsData } from "@/lib/types";
+import { AQI_CATEGORIES } from "@/lib/aqi";
 import {
   DEMO_BINS,
   DEMO_FIELD_LABELS,
@@ -60,18 +59,13 @@ function Section({
 }
 
 interface SidebarProps {
-  data: ZipNow[];
-  onSelectZip: (zip: string) => void;
-  ingestionEmpty: boolean;
   onTableView?: () => void;
   activeMetric: "aqi" | DemoNumericField;
   onMetricChange: (metric: "aqi" | DemoNumericField) => void;
   allZctaDemographics: DemographicsData[];
 }
 
-export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, activeMetric, onMetricChange, allZctaDemographics }: SidebarProps) {
-  const ranked = [...data].sort((a, b) => a.aqi - b.aqi);
-
+export function Sidebar({ onTableView, activeMetric, onMetricChange, allZctaDemographics }: SidebarProps) {
   const activeRange = activeMetric !== "aqi" ? getFieldRange(activeMetric, allZctaDemographics) : null;
 
   return (
@@ -111,9 +105,8 @@ export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, active
         </label>
       </Section>
 
-      {/* Community Context — demographic radio buttons in the same radio group */}
-      <Section title="Community Context" defaultOpen={false}>
-        <p className="mb-2 text-[10px] uppercase tracking-wide text-gray-400">ACS 2024 · Select to recolor map</p>
+      {/* Demographic — ACS fields */}
+      <Section title="Demographic" defaultOpen={false}>
         <div className="space-y-0.5">
           {DEMO_NUMERIC_FIELDS.map((field) => (
             <label key={field} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-gray-700 hover:bg-gray-50">
@@ -168,45 +161,6 @@ export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, active
               Gray = no data
             </p>
           </div>
-        )}
-      </Section>
-
-      {/* Rankings */}
-      <Section title="ZIP Rankings — Current AQI" defaultOpen>
-        {ingestionEmpty ? (
-          <p className="text-xs text-gray-500">
-            No ZIP data — check back after ingestion resumes.
-          </p>
-        ) : ranked.length === 0 ? (
-          <p className="text-xs text-gray-500">
-            No ZIPs match the current filter.
-          </p>
-        ) : (
-          <ul className="space-y-1">
-            {ranked.map((row) => (
-              <li key={row.zip} data-zip={row.zip}>
-                <button
-                  onClick={() => onSelectZip(row.zip)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-gray-50"
-                >
-                  <span
-                    className="h-3 w-3 flex-shrink-0 rounded-full border border-gray-300"
-                    style={{ backgroundColor: categoryColor(row.category) }}
-                  />
-                  <span className="text-sm font-medium text-gray-800">
-                    {row.zip}
-                  </span>
-                  <span className="truncate text-xs text-gray-500">
-                    {row.town}
-                  </span>
-                  <span className="ml-auto text-sm font-semibold text-gray-900">
-                    {row.aqi}
-                  </span>
-                  <CategoryBadge category={row.category} />
-                </button>
-              </li>
-            ))}
-          </ul>
         )}
       </Section>
     </div>

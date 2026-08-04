@@ -3,14 +3,17 @@ import { test, expect } from "@playwright/test";
 const BASE = "http://localhost:3000";
 const PILOT_ZIP = "93701"; // has full history, Low AQI
 
-// Open the detail panel for a given ZIP by finding it in the sidebar.
+// Open the detail panel for a given ZIP via the search bar.
 async function openPanel(page: import("@playwright/test").Page, zip: string) {
-  // domcontentloaded avoids blocking on the 945KB county boundaries fetch
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
-  // Click the sidebar row by its data-zip attribute
-  const row = page.locator(`[data-zip="${zip}"]`).first();
-  await row.waitFor({ state: "visible", timeout: 20_000 });
-  await row.click();
+  // Use the geographic search bar to navigate to the ZIP
+  const searchInput = page.locator('input[placeholder*="Search"]').first();
+  await searchInput.waitFor({ state: "visible", timeout: 15_000 });
+  await searchInput.fill(zip);
+  // Wait for dropdown result and click the ZIP option
+  const zipResult = page.locator(`[role="option"]:has-text("${zip}"), li:has-text("${zip}")`).first();
+  await zipResult.waitFor({ state: "visible", timeout: 8_000 });
+  await zipResult.click();
   // Wait for detail panel to slide in (aria-hidden="false" distinguishes it from sidebar)
   await page.waitForSelector(`aside[aria-hidden="false"]`, { timeout: 8000 });
   await page.waitForTimeout(500); // allow panel animation
@@ -112,46 +115,14 @@ test.describe("History section — pilot ZIP", () => {
 });
 
 test.describe("History section — non-pilot ZIP", () => {
-  // 93705 is excluded from the pilot backfill (only 10 days of real data,
-  // excluded per spec). It should show the honest empty state.
-  // We use 93703 which is not in PILOT_ZIPS at all.
+  // 93703 appears in live data but is not in the pilot backfill set.
+  // It should show the honest empty state.
   test("non-pilot ZIP shows honest empty state", async ({ page }) => {
-    // Find a ZIP not in the pilot set — 93703 appears in live data but not pilot history
-    await page.goto(BASE, { waitUntil: "domcontentloaded" });
-
-    // Navigate to any ZIP in the sidebar that is NOT a pilot ZIP
-    // We look for any sidebar row that doesn't match our 7 pilot ZIPs
-    const rows = await page
-      .locator("[data-zip]")
-      .filter({
-        hasNotText: "93701",
-      })
-      .all();
-
-    // Find the first non-pilot ZIP in the sidebar
-    let nonPilotZip: string | null = null;
-    const pilotSet = new Set([
-      "93701", "93702", "93711", "93720", "93727", "93728", "93730",
-    ]);
-    for (const row of rows) {
-      const zip = await row.getAttribute("data-zip");
-      if (zip && !pilotSet.has(zip)) {
-        nonPilotZip = zip;
-        break;
-      }
-    }
-
-    if (!nonPilotZip) {
-      // All visible ZIPs happen to be pilot ZIPs — skip gracefully
-      test.skip();
-      return;
-    }
-
-    // Click the row
-    await page.locator(`[data-zip="${nonPilotZip}"]`).first().click();
-    await page.waitForSelector(`aside >> text=${nonPilotZip}`, {
+    const NON_PILOT_ZIP = "93703";
+    await openPanel(page, NON_PILOT_ZIP);
+    await page.waitForSelector(`aside >> text=${NON_PILOT_ZIP}`, {
       timeout: 8000,
-    });
+    }).catch(() => {}); // panel may already show ZIP in heading
 
     // Wait for data fetch to settle
     await page.waitForTimeout(2000);

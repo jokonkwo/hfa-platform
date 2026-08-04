@@ -139,15 +139,6 @@ test.describe("Map canvas", () => {
     }
   });
 
-  test("sidebar shows ZIP data rows", async ({ page }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    const zipRows = page.locator("[data-zip]");
-    await expect(zipRows.first()).toBeVisible({ timeout: 15_000 });
-    const count = await zipRows.count();
-    expect(count, "expected at least 1 ZIP in sidebar").toBeGreaterThan(0);
-    console.log(`Sidebar shows ${count} ZIP rows`);
-  });
-
   test("map navigation controls are present", async ({ page }) => {
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await waitForMapLoad(page);
