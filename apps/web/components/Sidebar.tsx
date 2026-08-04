@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DemographicsData } from "@/lib/types";
 import { AQI_CATEGORIES } from "@/lib/aqi";
 import {
@@ -12,12 +12,170 @@ import {
   getFieldRange,
 } from "@/lib/demographics";
 
-// ── Full metric catalog (for search) ────────────────────────────────────────
+// ── Metric info catalog ──────────────────────────────────────────────────────
 type Metric = "aqi" | DemoNumericField;
+
+interface MetricInfo {
+  title: string;
+  description: string;
+  source: string;
+}
+
+const METRIC_INFO: Record<Metric, MetricInfo> = {
+  aqi: {
+    title: "Current PM2.5 AQI",
+    description:
+      "Real-time fine particulate matter (PM2.5) readings from PurpleAir sensors, corrected using the EPA/Barkjohn formula to align with regulatory-grade monitors. Updated approximately every 10 minutes.",
+    source: "PurpleAir sensors · EPA/Barkjohn correction",
+  },
+  population: {
+    title: "Population",
+    description:
+      "The total number of people residing in the area based on the most recent American Community Survey 5-year estimates.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  median_hh_income: {
+    title: "Median Household Income",
+    description:
+      "The income of the median, or middle, household in the area according to the most recent year of the US Census Bureau American Community Survey (ACS).",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  median_age: {
+    title: "Median Age",
+    description:
+      "The age of the median, or middle, resident in the area, where half the population is older and half is younger, based on ACS estimates.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  poverty_rate_pct: {
+    title: "Poverty Rate",
+    description:
+      "The percentage of individuals living below the official federal poverty threshold, as defined by the US Census Bureau based on household size and income.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  ed_less_than_hs_pct: {
+    title: "Less Than HS Diploma",
+    description:
+      "The share of adults aged 25 and older who have not earned a high school diploma or equivalency credential, reflecting educational attainment in the area.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  unemployment_rate_pct: {
+    title: "Unemployment Rate",
+    description:
+      "The percentage of people in the civilian labor force who are jobless, actively seeking work, and available for employment, based on ACS estimates.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  limited_english_pct: {
+    title: "Limited English Proficiency",
+    description:
+      "The percentage of residents aged 5 and older who speak English less than 'very well,' indicating limited ability to communicate in English in daily life.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  housing_cost_burden_pct: {
+    title: "Housing Cost Burden",
+    description:
+      "The share of households spending 30% or more of their gross income on housing costs (rent or mortgage plus utilities), a standard indicator of affordability stress.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  pop_density_per_sq_mi: {
+    title: "Population Density",
+    description:
+      "The number of residents per square mile, calculated from ACS population estimates and Census geographic area measurements.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  pop_growth_pct: {
+    title: "Population Growth",
+    description:
+      "The percentage change in total population from the prior ACS 5-year estimate period, reflecting net migration, births, and deaths over the measured interval.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+  income_growth_pct: {
+    title: "Income Growth",
+    description:
+      "The percentage change in median household income from the prior ACS 5-year estimate period, reflecting real changes in household earnings in the area.",
+    source: "US Census Bureau · ACS 5-Year 2024",
+  },
+};
+
+// ── Full metric catalog (for search) ────────────────────────────────────────
 const ALL_METRICS: { value: Metric; label: string }[] = [
   { value: "aqi", label: "Current PM2.5 AQI" },
   ...DEMO_NUMERIC_FIELDS.map((f) => ({ value: f as Metric, label: DEMO_FIELD_LABELS[f] ?? f })),
 ];
+
+// ── InfoCard — click-triggered overlay ──────────────────────────────────────
+function InfoButton({ metric }: { metric: Metric }) {
+  const [open, setOpen] = useState(false);
+  const [cardPos, setCardPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const info = METRIC_INFO[metric];
+
+  function handleOpen(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const cardWidth = 256;
+      const left = rect.right + 8 + cardWidth > window.innerWidth
+        ? rect.left - cardWidth - 8
+        : rect.right + 8;
+      setCardPos({ top: rect.top, left });
+    }
+    setOpen((o) => !o);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function handleOutside(e: MouseEvent) {
+      if (
+        cardRef.current && !cardRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [open]);
+
+  return (
+    <span className="ml-1 inline-flex">
+      <button
+        ref={btnRef}
+        onClick={handleOpen}
+        className="flex h-4 w-4 items-center justify-center rounded-full bg-gray-200 text-[10px] font-bold text-gray-600 hover:bg-gray-300"
+        aria-label={`Info: ${info.title}`}
+        aria-expanded={open}
+      >
+        i
+      </button>
+
+      {open && (
+        <div
+          ref={cardRef}
+          style={{ position: "fixed", top: cardPos.top, left: cardPos.left }}
+          className="z-[9999] w-64 rounded-lg border border-gray-200 bg-white p-4 shadow-xl"
+          role="dialog"
+          aria-label={info.title}
+        >
+          <button
+            onClick={() => setOpen(false)}
+            className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Close"
+          >
+            ×
+          </button>
+
+          <p className="pr-5 text-sm font-semibold text-gray-900">{info.title}</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-gray-600">{info.description}</p>
+          <p className="mt-3 text-[10px] text-gray-400">
+            <span className="font-medium text-gray-500">Source:</span>{" "}
+            {info.source}
+          </p>
+        </div>
+      )}
+    </span>
+  );
+}
 
 // ── MetricSearchBox ──────────────────────────────────────────────────────────
 function MetricSearchBox({
@@ -94,20 +252,6 @@ function MetricSearchBox({
         </ul>
       )}
     </div>
-  );
-}
-
-// ── InfoTip ──────────────────────────────────────────────────────────────────
-function InfoTip({ text }: { text: string }) {
-  return (
-    <span className="group relative ml-1 inline-flex">
-      <span className="flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-gray-300 text-[10px] font-bold text-gray-700">
-        i
-      </span>
-      <span className="pointer-events-none absolute left-5 top-0 z-20 hidden w-52 rounded-md bg-gray-900 px-2 py-1.5 text-[11px] leading-snug text-white group-hover:block">
-        {text}
-      </span>
-    </span>
   );
 }
 
@@ -202,7 +346,7 @@ export function Sidebar({ onTableView, activeMetric, onMetricChange, allZctaDemo
             onChange={() => onMetricChange("aqi")}
           />
           <span>Current PM2.5 AQI</span>
-          <InfoTip text="EPA/Barkjohn corrected PM2.5, updated every 10 minutes" />
+          <InfoButton metric="aqi" />
         </label>
       </Section>
 
@@ -219,6 +363,7 @@ export function Sidebar({ onTableView, activeMetric, onMetricChange, allZctaDemo
                 onChange={() => onMetricChange(field)}
               />
               <span>{DEMO_FIELD_LABELS[field] ?? field}</span>
+              <InfoButton metric={field} />
             </label>
           ))}
         </div>
