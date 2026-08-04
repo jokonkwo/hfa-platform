@@ -288,7 +288,13 @@ export default function Home() {
             </div>
           )}
 
-          <MapLegend activeMetric={activeMetric} allZctaDemographics={zctaDemographics} />
+          <MapLegend
+            activeMetric={activeMetric}
+            tier={tier}
+            stateDemographics={stateDemographic ? [stateDemographic] : []}
+            countyDemographics={countyDemographics}
+            zctaDemographics={zctaDemographics}
+          />
 
           <div className="pointer-events-auto absolute bottom-8 left-2 z-20">
             <button

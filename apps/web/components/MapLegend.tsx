@@ -9,19 +9,36 @@ import {
   type DemoNumericField,
 } from "@/lib/demographics";
 import type { DemographicsData } from "@/lib/types";
+import type { MapTier } from "@/components/TierControl";
 
 interface MapLegendProps {
   activeMetric: "aqi" | DemoNumericField;
-  allZctaDemographics: DemographicsData[];
+  tier: MapTier;
+  stateDemographics: DemographicsData[];
+  countyDemographics: DemographicsData[];
+  zctaDemographics: DemographicsData[];
 }
 
-export function MapLegend({ activeMetric, allZctaDemographics }: MapLegendProps) {
+export function MapLegend({
+  activeMetric,
+  tier,
+  stateDemographics,
+  countyDemographics,
+  zctaDemographics,
+}: MapLegendProps) {
+  const data =
+    tier === "state"
+      ? stateDemographics
+      : tier === "county"
+      ? countyDemographics
+      : zctaDemographics;
+
   return (
     <div className="pointer-events-none absolute bottom-8 right-2 z-20 select-none rounded-lg border border-gray-200 bg-white/95 px-3 py-2.5 shadow-md">
       {activeMetric === "aqi" ? (
         <AqiLegend />
       ) : (
-        <DemoLegend field={activeMetric} allData={allZctaDemographics} />
+        <DemoLegend field={activeMetric} data={data} />
       )}
     </div>
   );
@@ -51,12 +68,12 @@ function AqiLegend() {
 
 function DemoLegend({
   field,
-  allData,
+  data,
 }: {
   field: DemoNumericField;
-  allData: DemographicsData[];
+  data: DemographicsData[];
 }) {
-  const range = getFieldRange(field, allData);
+  const range = getFieldRange(field, data);
   const label = DEMO_FIELD_LABELS[field] ?? field;
 
   return (
@@ -71,8 +88,8 @@ function DemoLegend({
       </div>
       {range ? (
         <div className="mt-0.5 flex justify-between text-[10px] text-gray-500">
-          <span>{formatDemoValue(field, range.min)}</span>
-          <span>{formatDemoValue(field, range.max)}</span>
+          <span data-testid="legend-min">{formatDemoValue(field, range.min)}</span>
+          <span data-testid="legend-max">{formatDemoValue(field, range.max)}</span>
         </div>
       ) : (
         <p className="mt-0.5 text-[10px] italic text-gray-400">
