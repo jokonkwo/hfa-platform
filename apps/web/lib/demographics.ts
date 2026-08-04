@@ -39,15 +39,15 @@ export function formatDemoValue(field: keyof DemographicsData, value: number | n
 
 export const DEMO_FIELD_LABELS: Partial<Record<keyof DemographicsData, string>> = {
   population: "Population",
-  median_hh_income: "Median Income",
+  median_hh_income: "Median Household Income",
   median_age: "Median Age",
   poverty_rate_pct: "Poverty Rate",
-  ed_less_than_hs_pct: "< HS Diploma",
-  unemployment_rate_pct: "Unemployment",
-  limited_english_pct: "Limited English",
-  housing_cost_burden_pct: "Cost Burdened",
-  pop_density_per_sq_mi: "Pop. Density",
-  pop_growth_pct: "Pop. Growth",
+  ed_less_than_hs_pct: "Less Than HS Diploma",
+  unemployment_rate_pct: "Unemployment Rate",
+  limited_english_pct: "Limited English Proficiency",
+  housing_cost_burden_pct: "Housing Cost Burden",
+  pop_density_per_sq_mi: "Population Density",
+  pop_growth_pct: "Population Growth",
   income_growth_pct: "Income Growth",
 };
 
