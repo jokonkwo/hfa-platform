@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { MapViewHandle, BoundaryCollection, CountyBoundaryCollection, StateBoundaryCollection } from "@/components/MapView";
+import type { MapViewHandle, MapBounds, BoundaryCollection, CountyBoundaryCollection, StateBoundaryCollection } from "@/components/MapView";
 import { Sidebar } from "@/components/Sidebar";
 import { DetailPanel } from "@/components/DetailPanel";
 import { FilterPanel, DEFAULT_RANGE, type AqiRange } from "@/components/FilterPanel";
@@ -66,6 +66,11 @@ export default function Home() {
   // Active map metric — "aqi" or a demographic field name
   const [activeMetric, setActiveMetric] = useState<"aqi" | DemoNumericField>("aqi");
 
+  // Map viewport bounds (updated on moveend; used by table view for county filtering)
+  const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
+  // City names for the current county's ZIPs (ZIP tier table city column)
+  const [zipCities, setZipCities] = useState<Record<string, string>>({});
+
   const mapRef = useRef<MapViewHandle | null>(null);
 
   // Fetch AQI rows, state boundaries, and demographics once on mount.
@@ -95,6 +100,14 @@ export default function Home() {
       .then((b) => { if (b) setCountyBoundaries(b); })
       .finally(() => setCountyBoundariesLoading(false));
   }, [selectedStateGeoid]);
+
+  // Fetch ZIP→city mapping whenever the county changes (for ZIP tier table city column).
+  useEffect(() => {
+    fetch(`${API_BASE}/v1/zips/cities?county=${selectedCountyGeoid}`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then(setZipCities)
+      .catch(() => {});
+  }, [selectedCountyGeoid]);
 
   // Refetch ZIP boundaries and ZCTA demographics whenever the selected county changes.
   useEffect(() => {
@@ -265,6 +278,7 @@ export default function Home() {
             onSelectZip={handleSelectZip}
             onStateSelect={handleStateSelect}
             onCountySelect={handleCountySelect}
+            onBoundsChange={setMapBounds}
           />
 
           {state === "loading" && (
@@ -348,6 +362,11 @@ export default function Home() {
         fresnoAvgAqi={fresnoAvgAqi}
         countyDemographics={countyDemographics}
         stateDemographic={stateDemographic}
+        zctaDemographics={zctaDemographics}
+        countyBoundaries={countyBoundaries}
+        activeMetric={activeMetric}
+        mapBounds={mapBounds}
+        zipCities={zipCities}
         onClose={() => setTableViewOpen(false)}
       />
     </div>

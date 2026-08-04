@@ -279,10 +279,12 @@ Each result object:
 
 Returns a GeoJSON `FeatureCollection` of county polygons queried at request time from `HFA_DEV.main.raw_us_counties` (Census TIGER 2025, 3,235 US counties). Registered under `apps/api/src/hfa_api/routes/counties.py`.
 
-Each feature has three properties:
+Each feature has **five** properties:
 - `GEOID` — 5-digit FIPS code (e.g. `"06019"` for Fresno County)
 - `NAME` — short county name (e.g. `"Fresno"`)
 - `NAMELSAD` — full legal name (e.g. `"Fresno County"`)
+- `CENTROID_LON` — centroid longitude (number) — used by the Table View to filter counties to those whose centroid is inside the current map viewport
+- `CENTROID_LAT` — centroid latitude (number)
 
 The frontend uses this for the **county tier** of the drill-down map hierarchy. Fresno County (`GEOID: "06019"`) is colored by average AQI across pilot ZIPs; all other counties are rendered grey (`#cccccc`) as "no sensor data yet."
 
@@ -292,7 +294,7 @@ The frontend uses this for the **county tier** of the drill-down map hierarchy. 
   "features": [
     {
       "type": "Feature",
-      "properties": { "GEOID": "06019", "NAME": "Fresno", "NAMELSAD": "Fresno County" },
+      "properties": { "GEOID": "06019", "NAME": "Fresno", "NAMELSAD": "Fresno County", "CENTROID_LON": -119.649, "CENTROID_LAT": 36.738 },
       "geometry": { "type": "MultiPolygon", "coordinates": [...] }
     }
   ]
@@ -317,6 +319,24 @@ Returns a GeoJSON `FeatureCollection` queried at request time from `HFA_DEV.main
       "geometry": { "type": "Polygon", "coordinates": [...] }
     }
   ]
+}
+```
+
+### `GET /v1/zips/cities` — nearest incorporated city per ZIP in a county
+
+**Query params:** `?county=06019` (required, 5-digit county GEOID). Returns a JSON object mapping each ZCTA `zip5` to its nearest incorporated city (LSAD `'25'`). Falls back to any place type if no incorporated cities exist in the county. Registered under `apps/api/src/hfa_api/routes/zips.py`, `lru_cache`-cached for process lifetime.
+
+**Source:** Joins `raw_us_zctas` (centroids) against `raw_us_places` (city centroids) using Euclidean distance on pre-computed centroid columns. Only ZCTAs whose centroid is within the county boundary are included.
+
+**Frontend usage:** Fetched on mount and on `selectedCountyGeoid` change. Used by the **ZIP tier Table View** to populate the `City` column. Response is `Record<string, string>` (zip5 → city name).
+
+```json
+{
+  "93701": "Fresno",
+  "93702": "Fresno",
+  "93711": "Fresno",
+  "93727": "Clovis",
+  "93730": "Clovis"
 }
 ```
 

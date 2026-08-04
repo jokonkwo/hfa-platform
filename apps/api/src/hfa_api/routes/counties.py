@@ -16,7 +16,10 @@ def _fetch_county_boundaries(state: str) -> list[dict]:
     """Fetch county GeoJSON features for a state, cached for the process lifetime."""
     rows = query_rows(
         """
-        SELECT geoid, name, name_lsad, ST_AsGeoJSON(geom) AS geometry_json
+        SELECT geoid, name, name_lsad,
+               ST_X(ST_Centroid(geom)) AS centroid_lon,
+               ST_Y(ST_Centroid(geom)) AS centroid_lat,
+               ST_AsGeoJSON(geom) AS geometry_json
         FROM raw_us_counties
         WHERE state_fp = ?
         ORDER BY name
@@ -28,9 +31,15 @@ def _fetch_county_boundaries(state: str) -> list[dict]:
         {
             "type": "Feature",
             "geometry": json.loads(geom_json),
-            "properties": {"GEOID": geoid, "NAME": name, "NAMELSAD": name_lsad},
+            "properties": {
+                "GEOID": geoid,
+                "NAME": name,
+                "NAMELSAD": name_lsad,
+                "CENTROID_LON": centroid_lon,
+                "CENTROID_LAT": centroid_lat,
+            },
         }
-        for geoid, name, name_lsad, geom_json in rows
+        for geoid, name, name_lsad, centroid_lon, centroid_lat, geom_json in rows
     ]
 
 

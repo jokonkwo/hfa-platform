@@ -55,6 +55,58 @@ def _fetch_zip_boundaries(county: str) -> list[dict]:
     ]
 
 
+@lru_cache(maxsize=64)
+def _fetch_zip_cities(county: str) -> list[tuple[str, str]]:
+    """Map each ZCTA in a county to its nearest incorporated city (lsad='25').
+    Falls back to any place type if no incorporated cities exist in the county.
+    Cached for the process lifetime.
+    """
+    rows = query_rows(
+        """
+        WITH cities AS (
+            SELECT name, centroid_lon, centroid_lat
+            FROM raw_us_places
+            WHERE county_geoid = ? AND lsad = '25'
+        ),
+        all_places AS (
+            SELECT name, centroid_lon, centroid_lat
+            FROM raw_us_places
+            WHERE county_geoid = ?
+        ),
+        chosen AS (
+            SELECT name, centroid_lon, centroid_lat FROM cities
+            UNION ALL
+            SELECT name, centroid_lon, centroid_lat FROM all_places
+            WHERE (SELECT COUNT(*) FROM cities) = 0
+        )
+        SELECT z.zip5,
+               FIRST(c.name ORDER BY (z.centroid_lon - c.centroid_lon)^2 + (z.centroid_lat - c.centroid_lat)^2) AS city
+        FROM raw_us_zctas z
+        CROSS JOIN chosen c
+        JOIN raw_us_counties co ON co.geoid = ?
+        WHERE ST_Within(ST_Point(z.centroid_lon, z.centroid_lat), co.geom)
+        GROUP BY z.zip5
+        """,
+        [county, county, county],
+        spatial=True,
+    )
+    return [(zip5, city) for zip5, city in rows]
+
+
+@router.get("/cities", summary="Map ZIPs to nearest incorporated city for a county")
+def get_zip_cities(
+    county: str = Query(..., description="5-digit county GEOID (e.g. 06019 for Fresno County CA)"),
+) -> JSONResponse:
+    try:
+        pairs = _fetch_zip_cities(county)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"ZIP cities query failed: {e}")
+    return JSONResponse(
+        content={zip5: city for zip5, city in pairs},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.get("/boundaries", summary="ZIP boundary polygons as GeoJSON FeatureCollection")
 def get_zip_boundaries(
     county: str = Query(default="06019", description="5-digit county GEOID (default: 06019 = Fresno County CA)"),

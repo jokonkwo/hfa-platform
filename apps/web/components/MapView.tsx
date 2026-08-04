@@ -33,11 +33,16 @@ const STATE_OUTLINE = "state-boundary-outline";
 
 // ── Exported types ─────────────────────────────────────────────────────────
 
+export interface MapBounds {
+  west: number; east: number; north: number; south: number;
+}
+
 export interface MapViewHandle {
   flyToZip: (zip: string) => void;
   ensureVisible: (tier: MapTier) => void;
   flyToRegion: (result: SearchResult) => void;
   fitToGeoid: (type: "state" | "county", geoid: string) => void;
+  getBounds: () => MapBounds | null;
 }
 
 export type BoundaryCollection = GeoJSON.FeatureCollection<
@@ -47,7 +52,7 @@ export type BoundaryCollection = GeoJSON.FeatureCollection<
 
 export type CountyBoundaryCollection = GeoJSON.FeatureCollection<
   GeoJSON.Polygon | GeoJSON.MultiPolygon,
-  { GEOID: string; NAME: string; NAMELSAD: string }
+  { GEOID: string; NAME: string; NAMELSAD: string; CENTROID_LON: number; CENTROID_LAT: number }
 >;
 
 export type StateBoundaryCollection = GeoJSON.FeatureCollection<
@@ -386,6 +391,7 @@ interface MapViewProps {
   onSelectZip: (zip: string) => void;
   onStateSelect: (geoid: string, name: string) => void;
   onCountySelect: (geoid: string, name: string) => void;
+  onBoundsChange?: (bounds: MapBounds) => void;
 }
 
 const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
@@ -396,7 +402,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     zctaDemographics = [],
     countyDemographics = [],
     stateDemographic = null,
-    onSelectZip, onStateSelect, onCountySelect },
+    onSelectZip, onStateSelect, onCountySelect, onBoundsChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -421,6 +427,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const onSelectRef = useRef(onSelectZip);
   const onStateSelectRef = useRef(onStateSelect);
   const onCountySelectRef = useRef(onCountySelect);
+  const onBoundsChangeRef = useRef(onBoundsChange);
 
   // Hover ID refs — cleared on tier change so stale hover state doesn't persist.
   const hoveredStateIdRef = useRef<string | number | undefined>(undefined);
@@ -443,6 +450,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   onSelectRef.current = onSelectZip;
   onStateSelectRef.current = onStateSelect;
   onCountySelectRef.current = onCountySelect;
+  onBoundsChangeRef.current = onBoundsChange;
 
   useImperativeHandle(ref, () => ({
     flyToZip(zip: string) {
@@ -533,6 +541,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           map.fitBounds(geomBbox(feature.geometry), { padding: 60, duration: 600, maxZoom: 11 });
         }
       }
+    },
+    getBounds(): MapBounds | null {
+      const b = mapRef.current?.getBounds();
+      if (!b) return null;
+      return { west: b.getWest(), east: b.getEast(), north: b.getNorth(), south: b.getSouth() };
     },
   }));
 
@@ -674,6 +687,16 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         tw.__hfaMap = map;
         tw.__hfaProjectLngLat = (lng, lat) => map.project([lng, lat]);
         tw.__hfaTier = tierRef.current;
+
+        // ── Bounds change firing (for table viewport filter) ────────────
+        function fireBoundsChange() {
+          const cb = onBoundsChangeRef.current;
+          if (!cb) return;
+          const b = map.getBounds();
+          if (b) cb({ west: b.getWest(), east: b.getEast(), north: b.getNorth(), south: b.getSouth() });
+        }
+        fireBoundsChange();
+        map.on("moveend", fireBoundsChange);
 
         // ── Event handlers ──────────────────────────────────────────────
         const tooltip = tooltipRef.current;
