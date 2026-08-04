@@ -2,14 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { DemographicsData } from "@/lib/types";
-import { AQI_CATEGORIES } from "@/lib/aqi";
 import {
-  DEMO_BINS,
   DEMO_FIELD_LABELS,
   DEMO_NUMERIC_FIELDS,
   type DemoNumericField,
-  formatDemoValue,
-  getFieldRange,
 } from "@/lib/demographics";
 
 // ── Metric info catalog ──────────────────────────────────────────────────────
@@ -304,12 +300,9 @@ interface SidebarProps {
   onTableView?: () => void;
   activeMetric: "aqi" | DemoNumericField;
   onMetricChange: (metric: "aqi" | DemoNumericField) => void;
-  allZctaDemographics: DemographicsData[];
 }
 
-export function Sidebar({ onTableView, activeMetric, onMetricChange, allZctaDemographics }: SidebarProps) {
-  const activeRange = activeMetric !== "aqi" ? getFieldRange(activeMetric, allZctaDemographics) : null;
-
+export function Sidebar({ onTableView, activeMetric, onMetricChange }: SidebarProps) {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       {/* Branding */}
@@ -367,47 +360,6 @@ export function Sidebar({ onTableView, activeMetric, onMetricChange, allZctaDemo
             </label>
           ))}
         </div>
-      </Section>
-
-      {/* Legend — dynamic: AQI or 5-bin */}
-      <Section title="Legend" defaultOpen>
-        {activeMetric === "aqi" ? (
-          <ul className="space-y-1.5">
-            {AQI_CATEGORIES.map((c) => (
-              <li key={c.name} className="flex items-center gap-2 text-xs">
-                <span
-                  className="h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-gray-300"
-                  style={{ backgroundColor: c.color }}
-                />
-                <span className="text-gray-700">{c.name}</span>
-                <span className="ml-auto text-gray-400">{c.range}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="select-none">
-            <p className="mb-2 text-xs font-medium text-gray-700">
-              {DEMO_FIELD_LABELS[activeMetric] ?? activeMetric}
-            </p>
-            <div className="flex h-4 overflow-hidden rounded">
-              {DEMO_BINS.map((color, i) => (
-                <div key={i} className="flex-1" style={{ backgroundColor: color }} />
-              ))}
-            </div>
-            {activeRange ? (
-              <div className="mt-0.5 flex justify-between text-[10px] text-gray-500">
-                <span>{formatDemoValue(activeMetric, activeRange.min)}</span>
-                <span>{formatDemoValue(activeMetric, activeRange.max)}</span>
-              </div>
-            ) : (
-              <p className="mt-1 text-[10px] text-gray-400 italic">Range loads with ZIP data</p>
-            )}
-            <p className="mt-1.5 text-[10px] text-gray-400">
-              <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-200" />
-              Gray = no data
-            </p>
-          </div>
-        )}
       </Section>
     </div>
   );

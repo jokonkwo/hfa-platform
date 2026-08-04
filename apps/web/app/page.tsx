@@ -11,6 +11,7 @@ import { TierControl, type MapTier } from "@/components/TierControl";
 import { TableViewModal } from "@/components/TableViewModal";
 import { SearchBar } from "@/components/SearchBar";
 import { RegionPanel, type SelectedRegion } from "@/components/RegionPanel";
+import { MapLegend } from "@/components/MapLegend";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
 import type { DemoNumericField } from "@/lib/demographics";
@@ -238,7 +239,6 @@ export default function Home() {
             onTableView={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
             activeMetric={activeMetric}
             onMetricChange={setActiveMetric}
-            allZctaDemographics={zctaDemographics}
           />
         </aside>
 
@@ -287,6 +287,8 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          <MapLegend activeMetric={activeMetric} allZctaDemographics={zctaDemographics} />
 
           <div className="pointer-events-auto absolute bottom-8 left-2 z-20">
             <button

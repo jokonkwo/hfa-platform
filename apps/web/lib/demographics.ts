@@ -1,21 +1,25 @@
 import type { DemographicsData } from "./types";
 
 export const DEMO_BINS = [
-  "#2563EB",
+  "#1D4ED8",
+  "#3B82F6",
   "#93C5FD",
-  "#D1D5DB",
+  "#E5E7EB",
   "#FCA5A5",
-  "#DC2626",
+  "#EF4444",
+  "#B91C1C",
 ] as const;
 
-export function getBin(value: number, min: number, max: number): 0 | 1 | 2 | 3 | 4 {
-  if (max === min) return 2;
+export function getBin(value: number, min: number, max: number): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
+  if (max === min) return 3;
   const ratio = (value - min) / (max - min);
-  if (ratio < 0.2) return 0;
-  if (ratio < 0.4) return 1;
-  if (ratio < 0.6) return 2;
-  if (ratio < 0.8) return 3;
-  return 4;
+  if (ratio < 1 / 7) return 0;
+  if (ratio < 2 / 7) return 1;
+  if (ratio < 3 / 7) return 2;
+  if (ratio < 4 / 7) return 3;
+  if (ratio < 5 / 7) return 4;
+  if (ratio < 6 / 7) return 5;
+  return 6;
 }
 
 export function demoBinColor(value: number | null, min: number, max: number): string {
