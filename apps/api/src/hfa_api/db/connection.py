@@ -97,7 +97,7 @@ def query_rows(sql: str, params: Optional[list[Any]] = None, *, spatial: bool = 
     con = connect_readonly()
     try:
         if spatial:
-            con.execute("LOAD spatial")
+            con.execute("INSTALL spatial; LOAD spatial")
         if params:
             return con.execute(sql, params).fetchall()
         return con.execute(sql).fetchall()
