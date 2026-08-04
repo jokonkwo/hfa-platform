@@ -4,7 +4,14 @@ import { useState } from "react";
 import type { ZipNow, DemographicsData } from "@/lib/types";
 import { AQI_CATEGORIES, categoryColor } from "@/lib/aqi";
 import { CategoryBadge } from "./CategoryBadge";
-import { DemographicsPanel } from "./DemographicsPanel";
+import {
+  DEMO_BINS,
+  DEMO_FIELD_LABELS,
+  DEMO_NUMERIC_FIELDS,
+  type DemoNumericField,
+  formatDemoValue,
+  getFieldRange,
+} from "@/lib/demographics";
 
 function InfoTip({ text }: { text: string }) {
   return (
@@ -57,16 +64,19 @@ interface SidebarProps {
   onSelectZip: (zip: string) => void;
   ingestionEmpty: boolean;
   onTableView?: () => void;
-  zipDemographics: DemographicsData | null;
+  activeMetric: "aqi" | DemoNumericField;
+  onMetricChange: (metric: "aqi" | DemoNumericField) => void;
   allZctaDemographics: DemographicsData[];
 }
 
-export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, zipDemographics, allZctaDemographics }: SidebarProps) {
+export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, activeMetric, onMetricChange, allZctaDemographics }: SidebarProps) {
   const ranked = [...data].sort((a, b) => a.aqi - b.aqi);
+
+  const activeRange = activeMetric !== "aqi" ? getFieldRange(activeMetric, allZctaDemographics) : null;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {/* Branding — moved from header */}
+      {/* Branding */}
       <div className="flex flex-shrink-0 items-center justify-between border-b border-gray-200 px-4 py-3">
         <div>
           <span className="text-sm font-bold text-gray-900">Healthy Fresno Air</span>
@@ -85,49 +95,80 @@ export function Sidebar({ data, onSelectZip, ingestionEmpty, onTableView, zipDem
           </button>
         )}
       </div>
-      {/* Air Quality */}
+
+      {/* Air Quality metric */}
       <Section title="Air Quality" defaultOpen>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-800">
-          <input type="radio" name="aq-metric" checked readOnly />
+          <input
+            type="radio"
+            name="map-metric"
+            value="aqi"
+            checked={activeMetric === "aqi"}
+            onChange={() => onMetricChange("aqi")}
+          />
           <span>Current PM2.5 AQI</span>
           <InfoTip text="EPA/Barkjohn corrected PM2.5, updated every 10 minutes" />
         </label>
       </Section>
 
-      {/* Community Context */}
+      {/* Community Context — demographic radio buttons in the same radio group */}
       <Section title="Community Context" defaultOpen={false}>
-        {zipDemographics && allZctaDemographics.length > 0 ? (
-          <div>
-            <p className="mb-2 text-[10px] text-gray-400 uppercase tracking-wide">
-              ACS 2024 · {zipDemographics.name}
-            </p>
-            <DemographicsPanel
-              data={zipDemographics}
-              allData={allZctaDemographics}
-              compact
-            />
-          </div>
-        ) : (
-          <p className="text-xs text-gray-400 italic">
-            Select a ZIP code on the map to see community context.
-          </p>
-        )}
+        <p className="mb-2 text-[10px] uppercase tracking-wide text-gray-400">ACS 2024 · Select to recolor map</p>
+        <div className="space-y-0.5">
+          {DEMO_NUMERIC_FIELDS.map((field) => (
+            <label key={field} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-gray-700 hover:bg-gray-50">
+              <input
+                type="radio"
+                name="map-metric"
+                value={field}
+                checked={activeMetric === field}
+                onChange={() => onMetricChange(field)}
+              />
+              <span>{DEMO_FIELD_LABELS[field] ?? field}</span>
+            </label>
+          ))}
+        </div>
       </Section>
 
-      {/* AQI Legend */}
-      <Section title="AQI Legend" defaultOpen>
-        <ul className="space-y-1.5">
-          {AQI_CATEGORIES.map((c) => (
-            <li key={c.name} className="flex items-center gap-2 text-xs">
-              <span
-                className="h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-gray-300"
-                style={{ backgroundColor: c.color }}
-              />
-              <span className="text-gray-700">{c.name}</span>
-              <span className="ml-auto text-gray-400">{c.range}</span>
-            </li>
-          ))}
-        </ul>
+      {/* Legend — dynamic: AQI or 5-bin */}
+      <Section title="Legend" defaultOpen>
+        {activeMetric === "aqi" ? (
+          <ul className="space-y-1.5">
+            {AQI_CATEGORIES.map((c) => (
+              <li key={c.name} className="flex items-center gap-2 text-xs">
+                <span
+                  className="h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-gray-300"
+                  style={{ backgroundColor: c.color }}
+                />
+                <span className="text-gray-700">{c.name}</span>
+                <span className="ml-auto text-gray-400">{c.range}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="select-none">
+            <p className="mb-2 text-xs font-medium text-gray-700">
+              {DEMO_FIELD_LABELS[activeMetric] ?? activeMetric}
+            </p>
+            <div className="flex h-4 overflow-hidden rounded">
+              {DEMO_BINS.map((color, i) => (
+                <div key={i} className="flex-1" style={{ backgroundColor: color }} />
+              ))}
+            </div>
+            {activeRange ? (
+              <div className="mt-0.5 flex justify-between text-[10px] text-gray-500">
+                <span>{formatDemoValue(activeMetric, activeRange.min)}</span>
+                <span>{formatDemoValue(activeMetric, activeRange.max)}</span>
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px] text-gray-400 italic">Range loads with ZIP data</p>
+            )}
+            <p className="mt-1.5 text-[10px] text-gray-400">
+              <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-gray-200" />
+              Gray = no data
+            </p>
+          </div>
+        )}
       </Section>
 
       {/* Rankings */}

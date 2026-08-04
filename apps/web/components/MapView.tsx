@@ -4,9 +4,11 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type * as GeoJSON from "geojson";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import mapboxgl from "mapbox-gl";
-import type { ZipNow, SearchResult } from "@/lib/types";
+import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
 import { categoryColor, aqiToCategory } from "@/lib/aqi";
 import { ZIP_CENTROIDS, FRESNO_CENTER, FRESNO_ZOOM } from "@/lib/zipCentroids";
+import type { DemoNumericField } from "@/lib/demographics";
+import { demoBinColor, formatDemoValue, getFieldRange, DEMO_FIELD_LABELS } from "@/lib/demographics";
 import type { MapTier } from "@/components/TierControl";
 
 const MAPBOX_OUTDOORS_STYLE = "mapbox://styles/mapbox/outdoors-v12";
@@ -105,6 +107,9 @@ function buildPointGeoJSON(
 function buildZipBoundaryGeoJSON(
   boundaries: BoundaryCollection,
   data: ZipNow[],
+  activeMetric: "aqi" | DemoNumericField,
+  demoByGeoid: Map<string, DemographicsData>,
+  fieldRange: { min: number; max: number } | null,
 ): GeoJSON.FeatureCollection {
   const aqiByZip = new Map(data.map((r) => [r.zip, r]));
   return {
@@ -113,15 +118,29 @@ function buildZipBoundaryGeoJSON(
       (ft: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon, { ZCTA5: string }>) => {
         const zip = ft.properties?.ZCTA5 ?? "";
         const row = aqiByZip.get(zip);
+        let color: string;
+        let demoLabel: string | null = null;
+        let demoValue: string | null = null;
+        if (activeMetric === "aqi") {
+          color = row ? categoryColor(row.category) : "#cccccc";
+        } else {
+          const demo = demoByGeoid.get(zip);
+          const val = demo ? (demo[activeMetric] as number | null) : null;
+          color = fieldRange ? demoBinColor(val, fieldRange.min, fieldRange.max) : "#E5E7EB";
+          demoLabel = DEMO_FIELD_LABELS[activeMetric] ?? null;
+          demoValue = formatDemoValue(activeMetric, val);
+        }
         return {
           ...ft,
           properties: {
             zip,
-            color: row ? categoryColor(row.category) : "#cccccc",
+            color,
             hasData: row ? 1 : 0,
             aqi: row?.aqi ?? null,
             category: row?.category ?? null,
             town: row?.town ?? null,
+            demoLabel,
+            demoValue,
           },
         };
       },
@@ -132,6 +151,9 @@ function buildZipBoundaryGeoJSON(
 function buildCountyGeoJSON(
   countyBoundaries: CountyBoundaryCollection,
   fresnoAvgAqi: number | null,
+  activeMetric: "aqi" | DemoNumericField,
+  demoByGeoid: Map<string, DemographicsData>,
+  fieldRange: { min: number; max: number } | null,
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
@@ -142,13 +164,21 @@ function buildCountyGeoJSON(
         const namelsad = ft.properties?.NAMELSAD ?? "";
         const isFresno = geoid === FRESNO_COUNTY_GEOID;
         const avgAqi = isFresno ? fresnoAvgAqi : null;
-        const color =
-          isFresno && avgAqi !== null
-            ? categoryColor(aqiToCategory(avgAqi))
-            : "#cccccc";
+        let color: string;
+        let demoLabel: string | null = null;
+        let demoValue: string | null = null;
+        if (activeMetric === "aqi") {
+          color = isFresno && avgAqi !== null ? categoryColor(aqiToCategory(avgAqi)) : "#cccccc";
+        } else {
+          const demo = demoByGeoid.get(geoid);
+          const val = demo ? (demo[activeMetric] as number | null) : null;
+          color = fieldRange ? demoBinColor(val, fieldRange.min, fieldRange.max) : "#E5E7EB";
+          demoLabel = DEMO_FIELD_LABELS[activeMetric] ?? null;
+          demoValue = formatDemoValue(activeMetric, val);
+        }
         return {
           ...ft,
-          properties: { geoid, name, namelsad, color, hasData: isFresno ? 1 : 0, avgAqi },
+          properties: { geoid, name, namelsad, color, hasData: isFresno ? 1 : 0, avgAqi, demoLabel, demoValue },
         };
       },
     ),
@@ -158,18 +188,32 @@ function buildCountyGeoJSON(
 function buildStateGeoJSON(
   stateBoundaries: StateBoundaryCollection,
   fresnoAvgAqi: number | null,
+  activeMetric: "aqi" | DemoNumericField,
+  demoByGeoid: Map<string, DemographicsData>,
+  fieldRange: { min: number; max: number } | null,
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
     features: stateBoundaries.features.map(
       (ft: GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon, { GEOID: string; NAME: string; STUSPS: string; isCalifornia: boolean }>) => {
         const { GEOID, NAME, STUSPS, isCalifornia } = ft.properties ?? {};
-        const color = isCalifornia
-          ? (fresnoAvgAqi !== null ? categoryColor(aqiToCategory(fresnoAvgAqi)) : "#3B82F6")
-          : "#cccccc";
+        let color: string;
+        let demoLabel: string | null = null;
+        let demoValue: string | null = null;
+        if (activeMetric === "aqi") {
+          color = isCalifornia
+            ? (fresnoAvgAqi !== null ? categoryColor(aqiToCategory(fresnoAvgAqi)) : "#3B82F6")
+            : "#cccccc";
+        } else {
+          const demo = demoByGeoid.get(GEOID ?? "");
+          const val = demo ? (demo[activeMetric] as number | null) : null;
+          color = fieldRange ? demoBinColor(val, fieldRange.min, fieldRange.max) : "#E5E7EB";
+          demoLabel = DEMO_FIELD_LABELS[activeMetric] ?? null;
+          demoValue = formatDemoValue(activeMetric, val);
+        }
         return {
           ...ft,
-          properties: { geoid: GEOID, name: NAME, stusps: STUSPS, isCalifornia: isCalifornia ?? false, color },
+          properties: { geoid: GEOID, name: NAME, stusps: STUSPS, isCalifornia: isCalifornia ?? false, color, demoLabel, demoValue },
         };
       },
     ),
@@ -315,6 +359,14 @@ function zipTooltipHtml(zip: string, town: string | null, hasData: number, aqi: 
   return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${zip}</span><br/><span style="color:#9ca3af">No sensor data</span></div>`;
 }
 
+function demoTooltipHtml(title: string, subtitle: string | null, label: string | null, value: string | null): string {
+  const valueLine = value !== null && value !== "N/A"
+    ? `<br/><span style="font-weight:600">${label ?? ""}</span><span style="color:#6b7280"> ${value}</span>`
+    : `<br/><span style="color:#9ca3af">No data</span>`;
+  const subtitlePart = subtitle ? `<span style="color:#6b7280;margin-left:4px">${subtitle}</span>` : "";
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${title}</span>${subtitlePart}${valueLine}</div>`;
+}
+
 // ── MapView ────────────────────────────────────────────────────────────────
 
 interface MapViewProps {
@@ -327,6 +379,10 @@ interface MapViewProps {
   selectedStateGeoid?: string;
   selectedCountyGeoid?: string;
   tooltipEnabled?: boolean;
+  activeMetric?: "aqi" | DemoNumericField;
+  zctaDemographics?: DemographicsData[];
+  countyDemographics?: DemographicsData[];
+  stateDemographic?: DemographicsData | null;
   onSelectZip: (zip: string) => void;
   onStateSelect: (geoid: string, name: string) => void;
   onCountySelect: (geoid: string, name: string) => void;
@@ -336,6 +392,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   { data, boundaries, countyBoundaries, stateBoundaries, tier, fresnoAvgAqi,
     selectedStateGeoid = "06", selectedCountyGeoid = "06019",
     tooltipEnabled = true,
+    activeMetric = "aqi",
+    zctaDemographics = [],
+    countyDemographics = [],
+    stateDemographic = null,
     onSelectZip, onStateSelect, onCountySelect },
   ref,
 ) {
@@ -354,6 +414,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const selectedStateGeoidRef = useRef(selectedStateGeoid);
   const selectedCountyGeoidRef = useRef(selectedCountyGeoid);
   const tooltipEnabledRef = useRef(tooltipEnabled);
+  const activeMetricRef = useRef<"aqi" | DemoNumericField>(activeMetric);
+  const zctaDemographicsRef = useRef<DemographicsData[]>(zctaDemographics);
+  const countyDemographicsRef = useRef<DemographicsData[]>(countyDemographics);
+  const stateDemographicRef = useRef<DemographicsData | null>(stateDemographic);
   const onSelectRef = useRef(onSelectZip);
   const onStateSelectRef = useRef(onStateSelect);
   const onCountySelectRef = useRef(onCountySelect);
@@ -372,6 +436,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   selectedStateGeoidRef.current = selectedStateGeoid;
   selectedCountyGeoidRef.current = selectedCountyGeoid;
   tooltipEnabledRef.current = tooltipEnabled;
+  activeMetricRef.current = activeMetric;
+  zctaDemographicsRef.current = zctaDemographics;
+  countyDemographicsRef.current = countyDemographics;
+  stateDemographicRef.current = stateDemographic;
   onSelectRef.current = onSelectZip;
   onStateSelectRef.current = onStateSelect;
   onCountySelectRef.current = onCountySelect;
@@ -480,8 +548,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const syncZipBoundaries = () => {
     const map = mapRef.current;
     if (!map || !readyRef.current || !boundariesRef.current) return;
+    const metric = activeMetricRef.current;
+    const demoByGeoid = new Map(zctaDemographicsRef.current.map((d) => [d.geoid, d]));
+    const fieldRange = metric !== "aqi" ? getFieldRange(metric, zctaDemographicsRef.current) : null;
     (map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current));
+      ?.setData(buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current, metric, demoByGeoid, fieldRange));
     if (dataRef.current.length > 0) {
       type ZipNowWin = Window & typeof globalThis & { __hfaZipNowLoaded?: boolean };
       (window as ZipNowWin).__hfaZipNowLoaded = true;
@@ -493,8 +564,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const syncCountyBoundaries = () => {
     const map = mapRef.current;
     if (!map || !readyRef.current || !countyBoundariesRef.current) return;
+    const metric = activeMetricRef.current;
+    const demoByGeoid = new Map(countyDemographicsRef.current.map((d) => [d.geoid, d]));
+    const fieldRange = metric !== "aqi" ? getFieldRange(metric, countyDemographicsRef.current) : null;
     (map.getSource(COUNTY_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current));
+      ?.setData(buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, fieldRange));
     type BoundaryWin = Window & typeof globalThis & { __hfaCountyBoundariesLoaded?: boolean };
     (window as BoundaryWin).__hfaCountyBoundariesLoaded = true;
   };
@@ -502,8 +576,12 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const syncStateBoundaries = () => {
     const map = mapRef.current;
     if (!map || !readyRef.current || !stateBoundariesRef.current) return;
+    const metric = activeMetricRef.current;
+    const stateArr = stateDemographicRef.current ? [stateDemographicRef.current] : [];
+    const demoByGeoid = new Map(stateArr.map((d) => [d.geoid, d]));
+    const fieldRange = metric !== "aqi" ? getFieldRange(metric, stateArr) : null;
     (map.getSource(STATE_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current));
+      ?.setData(buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, fieldRange));
     type StateWin = Window & typeof globalThis & { __hfaStateBoundariesLoaded?: boolean };
     (window as StateWin).__hfaStateBoundariesLoaded = true;
   };
@@ -613,13 +691,15 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           hoveredStateIdRef.current = fid;
           map.setFeatureState({ source: STATE_SOURCE, id: fid }, { hover: true });
           map.getCanvas().style.cursor = "pointer";
-          const props = (feature.properties ?? {}) as { name: string; isCalifornia: boolean };
+          const props = (feature.properties ?? {}) as { name: string; isCalifornia: boolean; demoLabel: string | null; demoValue: string | null };
           if (tooltip) {
             const pt = e.point;
             tooltip.style.display = "block";
             tooltip.style.left = `${pt.x + 14}px`;
             tooltip.style.top = `${pt.y - 12}px`;
-            tooltip.innerHTML = stateTooltipHtml(props.name, props.isCalifornia, fresnoAvgAqiRef.current);
+            tooltip.innerHTML = activeMetricRef.current === "aqi"
+              ? stateTooltipHtml(props.name, props.isCalifornia, fresnoAvgAqiRef.current)
+              : demoTooltipHtml(props.name, null, props.demoLabel, props.demoValue);
           }
           type HoverWin = Window & typeof globalThis & { __hfaHoveredState?: string };
           (window as HoverWin).__hfaHoveredState = props.name;
@@ -662,13 +742,15 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           hoveredCountyIdRef.current = fid;
           map.setFeatureState({ source: COUNTY_SOURCE, id: fid }, { hover: true });
           map.getCanvas().style.cursor = "pointer";
-          const props = (feature.properties ?? {}) as { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null };
+          const props = (feature.properties ?? {}) as { geoid: string; name: string; namelsad: string; hasData: number; avgAqi: number | null; demoLabel: string | null; demoValue: string | null };
           if (tooltip) {
             const pt = e.point;
             tooltip.style.display = "block";
             tooltip.style.left = `${pt.x + 14}px`;
             tooltip.style.top = `${pt.y - 12}px`;
-            tooltip.innerHTML = countyTooltipHtml(props.namelsad, props.hasData, props.avgAqi);
+            tooltip.innerHTML = activeMetricRef.current === "aqi"
+              ? countyTooltipHtml(props.namelsad, props.hasData, props.avgAqi)
+              : demoTooltipHtml(props.namelsad, null, props.demoLabel, props.demoValue);
           }
           type HoverWin = Window & typeof globalThis & { __hfaHoveredCounty?: string };
           (window as HoverWin).__hfaHoveredCounty = props.name;
@@ -711,13 +793,15 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           hoveredZipIdRef.current = fid;
           map.setFeatureState({ source: ZIP_BOUNDARY_SOURCE, id: fid }, { hover: true });
           map.getCanvas().style.cursor = "pointer";
-          const props = (feature.properties ?? {}) as { zip: string; town: string | null; aqi: number | null; category: string | null; hasData: number };
+          const props = (feature.properties ?? {}) as { zip: string; town: string | null; aqi: number | null; category: string | null; hasData: number; demoLabel: string | null; demoValue: string | null };
           if (tooltip) {
             const pt = e.point;
             tooltip.style.display = "block";
             tooltip.style.left = `${pt.x + 14}px`;
             tooltip.style.top = `${pt.y - 12}px`;
-            tooltip.innerHTML = zipTooltipHtml(props.zip, props.town, props.hasData, props.aqi, props.category);
+            tooltip.innerHTML = activeMetricRef.current === "aqi"
+              ? zipTooltipHtml(props.zip, props.town, props.hasData, props.aqi, props.category)
+              : demoTooltipHtml(props.zip, props.town, props.demoLabel, props.demoValue);
           }
           type HoverWin = Window & typeof globalThis & { __hfaHoveredZip?: string };
           (window as HoverWin).__hfaHoveredZip = props.zip ?? undefined;
@@ -834,6 +918,28 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (stateBoundariesRef.current) syncStateBoundaries();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fresnoAvgAqi]);
+
+  // ── Re-color all tiers when active metric switches ──────────────────────
+  useEffect(() => {
+    syncZipBoundaries();
+    syncCountyBoundaries();
+    syncStateBoundaries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMetric]);
+
+  // ── Re-color when demographic data arrives (if metric is already set) ───
+  useEffect(() => {
+    if (activeMetricRef.current !== "aqi") syncZipBoundaries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zctaDemographics]);
+
+  useEffect(() => {
+    if (activeMetricRef.current !== "aqi") {
+      syncCountyBoundaries();
+      syncStateBoundaries();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countyDemographics, stateDemographic]);
 
   // ── Clear hover state when tooltip is disabled ─────────────────────────
   useEffect(() => {

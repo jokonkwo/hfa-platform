@@ -13,6 +13,7 @@ import { SearchBar } from "@/components/SearchBar";
 import { RegionPanel, type SelectedRegion } from "@/components/RegionPanel";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
+import type { DemoNumericField } from "@/lib/demographics";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
@@ -60,6 +61,9 @@ export default function Home() {
   const [stateDemographic, setStateDemographic] = useState<DemographicsData | null>(null);
   const [countyDemographics, setCountyDemographics] = useState<DemographicsData[]>([]);
   const [zctaDemographics, setZctaDemographics] = useState<DemographicsData[]>([]);
+
+  // Active map metric — "aqi" or a demographic field name
+  const [activeMetric, setActiveMetric] = useState<"aqi" | DemoNumericField>("aqi");
 
   const mapRef = useRef<MapViewHandle | null>(null);
 
@@ -119,11 +123,6 @@ export default function Home() {
     if (rows.length === 0) return null;
     return Math.round(rows.reduce((sum, r) => sum + r.aqi, 0) / rows.length);
   }, [rows]);
-
-  const selectedZipDemographics = useMemo(
-    () => zctaDemographics.find((d) => d.geoid === selectedZip) ?? null,
-    [zctaDemographics, selectedZip],
-  );
 
   const regionDemographics = useMemo(() => {
     if (!selectedRegion) return null;
@@ -240,7 +239,8 @@ export default function Home() {
             onSelectZip={handleSidebarSelectZip}
             ingestionEmpty={ingestionEmpty}
             onTableView={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
-            zipDemographics={selectedZipDemographics}
+            activeMetric={activeMetric}
+            onMetricChange={setActiveMetric}
             allZctaDemographics={zctaDemographics}
           />
         </aside>
@@ -261,6 +261,10 @@ export default function Home() {
             selectedStateGeoid={selectedStateGeoid}
             selectedCountyGeoid={selectedCountyGeoid}
             tooltipEnabled={tooltipEnabled}
+            activeMetric={activeMetric}
+            zctaDemographics={zctaDemographics}
+            countyDemographics={countyDemographics}
+            stateDemographic={stateDemographic}
             onSelectZip={handleSelectZip}
             onStateSelect={handleStateSelect}
             onCountySelect={handleCountySelect}
