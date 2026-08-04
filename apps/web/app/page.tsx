@@ -10,7 +10,6 @@ import { AboutPanel } from "@/components/AboutPanel";
 import { TierControl, type MapTier } from "@/components/TierControl";
 import { TableViewModal } from "@/components/TableViewModal";
 import { SearchBar } from "@/components/SearchBar";
-import { RegionPanel, type SelectedRegion } from "@/components/RegionPanel";
 import { MapLegend } from "@/components/MapLegend";
 import { fetchZipsNow, fetchZipBoundaries, fetchCountyBoundaries, fetchStateBoundaries, ApiError } from "@/lib/api";
 import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
@@ -51,7 +50,6 @@ export default function Home() {
   const [tooltipEnabled, setTooltipEnabled] = useState(true);
 
   const [selectedZip, setSelectedZip] = useState<string | null>(null);
-  const [selectedRegion, setSelectedRegion] = useState<SelectedRegion | null>(null);
   const [range, setRange] = useState<AqiRange>(DEFAULT_RANGE);
   const [filterOpen, setFilterOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -138,12 +136,6 @@ export default function Home() {
     return Math.round(rows.reduce((sum, r) => sum + r.aqi, 0) / rows.length);
   }, [rows]);
 
-  const regionDemographics = useMemo(() => {
-    if (!selectedRegion) return null;
-    if (selectedRegion.type === "state") return stateDemographic;
-    return countyDemographics.find((d) => d.geoid === selectedRegion.geoid) ?? null;
-  }, [selectedRegion, stateDemographic, countyDemographics]);
-
   const handleSelectZip = useCallback((zip: string) => {
     setSelectedZip(zip);
     mapRef.current?.flyToZip(zip);
@@ -179,15 +171,13 @@ export default function Home() {
     mapRef.current?.ensureVisible(newTier);
   }, []);
 
-  const handleStateSelect = useCallback((geoid: string, name: string) => {
+  const handleStateSelect = useCallback((geoid: string, _name: string) => {
     setSelectedStateGeoid(geoid);
-    setSelectedRegion({ type: "state", geoid, name });
     mapRef.current?.fitToGeoid("state", geoid);
   }, []);
 
-  const handleCountySelect = useCallback((geoid: string, name: string) => {
+  const handleCountySelect = useCallback((geoid: string, _name: string) => {
     setSelectedCountyGeoid(geoid);
-    setSelectedRegion({ type: "county", geoid, name });
     mapRef.current?.fitToGeoid("county", geoid);
   }, []);
 
@@ -249,7 +239,6 @@ export default function Home() {
           }`}
         >
           <Sidebar
-            onTableView={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
             activeMetric={activeMetric}
             onMetricChange={setActiveMetric}
           />
@@ -310,7 +299,18 @@ export default function Home() {
             zctaDemographics={zctaDemographics}
           />
 
-          <div className="pointer-events-auto absolute bottom-8 left-2 z-20">
+          {/* Bottom-left control cluster: Table View + Tooltip toggle */}
+          <div className="pointer-events-auto absolute bottom-8 left-2 z-20 flex items-center gap-2">
+            <button
+              onClick={() => { setTableViewOpen(true); setFilterOpen(false); setAboutOpen(false); }}
+              aria-label="Table View"
+              className="flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-gray-50"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <path strokeLinecap="round" d="M3 5h18M3 10h18M3 15h18M3 20h18" />
+              </svg>
+              Table View
+            </button>
             <button
               onClick={() => setTooltipEnabled((v) => !v)}
               aria-pressed={tooltipEnabled}
@@ -328,6 +328,20 @@ export default function Home() {
             </button>
           </div>
 
+          {/* Right-side Feedback button */}
+          <div className="pointer-events-auto absolute right-3 top-1/2 z-20 -translate-y-1/2">
+            <button
+              onClick={() => console.log("[HFA] Feedback button clicked — wiring TBD")}
+              aria-label="Send feedback"
+              className="flex flex-col items-center gap-1 rounded-xl bg-white/95 px-3 py-2.5 text-xs font-medium text-gray-700 shadow-md ring-1 ring-gray-200 hover:bg-gray-50"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 16c0 1.1-.9 2-2 2H7l-4 4V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" />
+              </svg>
+              <span>Feedback</span>
+            </button>
+          </div>
+
           {state === "error" && (
             <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2 rounded-md bg-red-600 px-4 py-2 text-sm text-white shadow-lg">
               {errorMsg}
@@ -339,14 +353,6 @@ export default function Home() {
               Air quality data unavailable — ingestion paused. Historical data shown when available.
             </div>
           )}
-
-          <RegionPanel
-            region={selectedRegion}
-            fresnoAvgAqi={fresnoAvgAqi}
-            demographics={regionDemographics}
-            allDemographics={selectedRegion?.type === "state" ? (stateDemographic ? [stateDemographic] : []) : countyDemographics}
-            onClose={() => setSelectedRegion(null)}
-          />
 
           <FilterPanel open={filterOpen} range={range} onChange={setRange} onClose={() => setFilterOpen(false)} />
         </main>

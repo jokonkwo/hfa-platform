@@ -1,10 +1,11 @@
 /**
- * Region-selection fluidity and zoom tests.
+ * Region-selection regression tests.
  *
  * Verifies:
- *  - Clicking a state in state tier zooms to that state (not hardcoded to CA)
- *  - Clicking a state in county tier updates counties + zooms to that state
- *  - Clicking a county in county tier zooms to that county
+ *  - Clicking a state in state tier zooms to that state (no popup appears)
+ *  - Clicking a county in county tier zooms to that county (no popup appears)
+ *  - RegionPanel / DemographicsPanel popup is NOT shown on click (removed in UI v2)
+ *
  * Covers Nevada, Arizona, Oregon (state tier) and Sacramento, Merced, LA (county tier).
  */
 import { test, expect, type Page } from "@playwright/test";
@@ -98,7 +99,7 @@ test.describe("State tier — clicking non-CA states zooms to that state", () =>
   ];
 
   for (const state of states) {
-    test(`clicking ${state.name} opens RegionPanel and zooms to ${state.name}`, async ({ page }) => {
+    test(`clicking ${state.name} zooms to that state (no popup)`, async ({ page }) => {
       await page.goto("/", { waitUntil: "domcontentloaded" });
       await waitForMapLoad(page);
       await switchToStateTier(page);
@@ -131,13 +132,9 @@ test.describe("State tier — clicking non-CA states zooms to that state", () =>
 
       await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
 
-      // RegionPanel must appear
-      await expect(page.locator("[data-region-panel]")).toBeVisible({ timeout: 4_000 });
-
-      // Panel must display the correct state name
-      const panelText = await page.locator("[data-region-panel]").innerText();
-      console.log(`${state.name} RegionPanel: "${panelText.substring(0, 80)}"`);
-      expect(panelText).toMatch(new RegExp(state.name, "i"));
+      // NO popup should appear — RegionPanel was removed in UI v2
+      await page.waitForTimeout(600);
+      await expect(page.locator("[data-region-panel]")).not.toBeVisible();
 
       // Tier must stay "state"
       const tier = await page.evaluate(
@@ -168,7 +165,7 @@ test.describe("County tier — clicking non-Fresno counties zooms to that county
   ];
 
   for (const county of counties) {
-    test(`clicking ${county.name} opens RegionPanel and zooms to it`, async ({ page }) => {
+    test(`clicking ${county.name} zooms to it (no popup)`, async ({ page }) => {
       await page.goto("/", { waitUntil: "domcontentloaded" });
       await waitForMapLoad(page);
       await waitForCountyBoundaries(page);
@@ -196,15 +193,9 @@ test.describe("County tier — clicking non-Fresno counties zooms to that county
 
       await page.mouse.click(canvasRect!.x + pt!.x, canvasRect!.y + pt!.y);
 
-      // RegionPanel must appear
-      await expect(page.locator("[data-region-panel]")).toBeVisible({ timeout: 4_000 });
-
-      // Panel must show the county name
-      const panelText = await page.locator("[data-region-panel]").innerText();
-      console.log(`${county.name} RegionPanel: "${panelText.substring(0, 80)}"`);
-      // Match on the core name (strip "County" from the pattern to be safe)
-      const coreName = county.name.replace(/ County$/, "");
-      expect(panelText).toMatch(new RegExp(coreName, "i"));
+      // NO popup should appear — RegionPanel was removed in UI v2
+      await page.waitForTimeout(600);
+      await expect(page.locator("[data-region-panel]")).not.toBeVisible();
 
       // Tier must stay "county"
       const tier = await page.evaluate(

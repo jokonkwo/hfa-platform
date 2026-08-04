@@ -30,6 +30,9 @@ const COUNTY_OUTLINE = "county-boundary-outline";
 const STATE_SOURCE = "state-boundaries";
 const STATE_FILL = "state-boundary-fill";
 const STATE_OUTLINE = "state-boundary-outline";
+const STATE_LABELS = "state-labels";
+const COUNTY_LABELS = "county-labels";
+const ZIP_LABELS = "zip-labels";
 
 // ── Exported types ─────────────────────────────────────────────────────────
 
@@ -146,6 +149,10 @@ function buildZipBoundaryGeoJSON(
             town: row?.town ?? null,
             demoLabel,
             demoValue,
+            labelName: zip,
+            labelValue: activeMetric === "aqi"
+              ? (row ? String(row.aqi) : "")
+              : (demoValue ?? ""),
           },
         };
       },
@@ -183,7 +190,13 @@ function buildCountyGeoJSON(
         }
         return {
           ...ft,
-          properties: { geoid, name, namelsad, color, hasData: isFresno ? 1 : 0, avgAqi, demoLabel, demoValue },
+          properties: {
+            geoid, name, namelsad, color, hasData: isFresno ? 1 : 0, avgAqi, demoLabel, demoValue,
+            labelName: name,
+            labelValue: activeMetric === "aqi"
+              ? (isFresno && avgAqi !== null ? String(avgAqi) : "")
+              : (demoValue ?? ""),
+          },
         };
       },
     ),
@@ -218,7 +231,14 @@ function buildStateGeoJSON(
         }
         return {
           ...ft,
-          properties: { geoid: GEOID, name: NAME, stusps: STUSPS, isCalifornia: isCalifornia ?? false, color, demoLabel, demoValue },
+          properties: {
+            geoid: GEOID, name: NAME, stusps: STUSPS, isCalifornia: isCalifornia ?? false,
+            color, demoLabel, demoValue,
+            labelName: STUSPS ?? NAME ?? "",
+            labelValue: activeMetric === "aqi"
+              ? (isCalifornia && fresnoAvgAqi !== null ? String(fresnoAvgAqi) : "")
+              : (demoValue ?? ""),
+          },
         };
       },
     ),
@@ -305,6 +325,17 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
     }
   }
 
+  // ── Label layers: show only for the active tier ────────────────────────
+  if (map.getLayer(STATE_LABELS)) {
+    map.setLayoutProperty(STATE_LABELS, "visibility", tier === "state" ? "visible" : "none");
+  }
+  if (map.getLayer(COUNTY_LABELS)) {
+    map.setLayoutProperty(COUNTY_LABELS, "visibility", tier === "county" ? "visible" : "none");
+  }
+  if (map.getLayer(ZIP_LABELS)) {
+    map.setLayoutProperty(ZIP_LABELS, "visibility", tier === "zip" ? "visible" : "none");
+  }
+
   // ── ZIP layer + circles: only in zip tier ─────────────────────────────
   const zipVisible = tier === "zip";
   if (map.getLayer(ZIP_BOUNDARY_FILL)) {
@@ -347,14 +378,14 @@ function stateTooltipHtml(name: string, isCalifornia: boolean, fresnoAvgAqi: num
     : isCalifornia
     ? `<br/><span style="color:#9ca3af">Air quality data available</span>`
     : `<br/><span style="color:#9ca3af">No program data yet</span>`;
-  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span>${aqiLine}<br/><span style="font-size:11px;color:#2563eb">Click for summary →</span></div>`;
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${name}</span>${aqiLine}</div>`;
 }
 
 function countyTooltipHtml(namelsad: string, hasData: number, avgAqi: number | null): string {
   const aqiLine = hasData
     ? `<br/><span style="font-weight:600">Avg AQI ${avgAqi ?? "—"}</span><span style="color:#6b7280"> across pilot ZIPs</span>`
     : `<br/><span style="color:#9ca3af">No sensor data yet</span>`;
-  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span>${aqiLine}<br/><span style="font-size:11px;color:#2563eb">Click for summary →</span></div>`;
+  return `<div style="font-family:system-ui,sans-serif;font-size:13px;padding:7px 10px;background:#fff;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);border:1px solid #e5e7eb;white-space:nowrap;"><span style="font-weight:700">${namelsad}</span>${aqiLine}</div>`;
 }
 
 function zipTooltipHtml(zip: string, town: string | null, hasData: number, aqi: number | null, category: string | null): string {
@@ -669,6 +700,47 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
             "circle-stroke-width": 1.5,
             "circle-stroke-color": "#ffffff",
           },
+        });
+
+        // ── On-map bold labels ─────────────────────────────────────────
+        const labelTextField = [
+          "case",
+          ["!=", ["get", "labelValue"], ""],
+          ["concat", ["get", "labelName"], "\n", ["get", "labelValue"]],
+          ["get", "labelName"],
+        ] as unknown as string;
+
+        const labelLayout: mapboxgl.SymbolLayout = {
+          "text-field": labelTextField,
+          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-anchor": "center",
+          "text-justify": "center",
+          "text-max-width": 7,
+          "text-line-height": 1.3,
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "symbol-placement": "point",
+        };
+        const labelPaint: mapboxgl.SymbolPaint = {
+          "text-color": "#111111",
+          "text-halo-color": "rgba(255,255,255,0.92)",
+          "text-halo-width": 1.8,
+        };
+
+        map.addLayer({
+          id: STATE_LABELS, type: "symbol", source: STATE_SOURCE, minzoom: 4,
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 4, 9, 7, 12] as unknown as number },
+          paint: labelPaint,
+        });
+        map.addLayer({
+          id: COUNTY_LABELS, type: "symbol", source: COUNTY_SOURCE, minzoom: 5.5,
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 5.5, 9, 9, 12] as unknown as number },
+          paint: labelPaint,
+        });
+        map.addLayer({
+          id: ZIP_LABELS, type: "symbol", source: ZIP_BOUNDARY_SOURCE, minzoom: 9,
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 9, 12, 12] as unknown as number },
+          paint: labelPaint,
         });
 
         // Apply correct styling for the default tier
