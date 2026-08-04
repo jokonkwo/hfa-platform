@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { DemographicsData } from "@/lib/types";
 import { AQI_CATEGORIES } from "@/lib/aqi";
 import {
@@ -12,6 +12,92 @@ import {
   getFieldRange,
 } from "@/lib/demographics";
 
+// ── Full metric catalog (for search) ────────────────────────────────────────
+type Metric = "aqi" | DemoNumericField;
+const ALL_METRICS: { value: Metric; label: string }[] = [
+  { value: "aqi", label: "Current PM2.5 AQI" },
+  ...DEMO_NUMERIC_FIELDS.map((f) => ({ value: f as Metric, label: DEMO_FIELD_LABELS[f] ?? f })),
+];
+
+// ── MetricSearchBox ──────────────────────────────────────────────────────────
+function MetricSearchBox({
+  activeMetric,
+  onMetricChange,
+}: {
+  activeMetric: Metric;
+  onMetricChange: (m: Metric) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const results = query.trim()
+    ? ALL_METRICS.filter((m) => m.label.toLowerCase().includes(query.toLowerCase()))
+    : [];
+
+  function select(m: Metric) {
+    onMetricChange(m);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative border-b border-gray-200 px-3 py-2">
+      <div className="flex items-center gap-2 rounded border border-gray-300 bg-white px-2.5 py-1.5 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300">
+        <svg className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+        </svg>
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          placeholder="SEARCH DATA POINTS"
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          className="w-full bg-transparent text-[11px] font-semibold uppercase tracking-wider text-gray-500 placeholder:text-gray-400 focus:outline-none"
+          aria-label="Search data points"
+          aria-autocomplete="list"
+          aria-expanded={open && results.length > 0}
+        />
+        {query && (
+          <button
+            onMouseDown={(e) => { e.preventDefault(); setQuery(""); inputRef.current?.focus(); }}
+            className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+            aria-label="Clear search"
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {open && results.length > 0 && (
+        <ul
+          role="listbox"
+          className="absolute left-3 right-3 top-full z-50 mt-0.5 max-h-60 overflow-y-auto rounded border border-gray-200 bg-white shadow-lg"
+        >
+          {results.map((m) => (
+            <li key={m.value} role="option" aria-selected={activeMetric === m.value}>
+              <button
+                onMouseDown={(e) => { e.preventDefault(); select(m.value); }}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-gray-50 ${activeMetric === m.value ? "font-semibold text-blue-700" : "text-gray-700"}`}
+              >
+                {activeMetric === m.value && (
+                  <svg className="h-3 w-3 flex-shrink-0 text-blue-600" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+                <span className={activeMetric === m.value ? "" : "ml-5"}>{m.label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── InfoTip ──────────────────────────────────────────────────────────────────
 function InfoTip({ text }: { text: string }) {
   return (
     <span className="group relative ml-1 inline-flex">
@@ -25,6 +111,7 @@ function InfoTip({ text }: { text: string }) {
   );
 }
 
+// ── Section ──────────────────────────────────────────────────────────────────
 function Section({
   title,
   chip,
@@ -68,6 +155,7 @@ function Section({
   );
 }
 
+// ── Sidebar ──────────────────────────────────────────────────────────────────
 interface SidebarProps {
   onTableView?: () => void;
   activeMetric: "aqi" | DemoNumericField;
@@ -99,6 +187,9 @@ export function Sidebar({ onTableView, activeMetric, onMetricChange, allZctaDemo
           </button>
         )}
       </div>
+
+      {/* Search data points */}
+      <MetricSearchBox activeMetric={activeMetric} onMetricChange={onMetricChange} />
 
       {/* Air Quality metric */}
       <Section title="Air Quality" defaultOpen>
