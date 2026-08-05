@@ -6,14 +6,14 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
 import { categoryColor, aqiToCategory } from "@/lib/aqi";
-import { ZIP_CENTROIDS, FRESNO_CENTER, FRESNO_ZOOM } from "@/lib/zipCentroids";
+import { ZIP_CENTROIDS } from "@/lib/zipCentroids";
 import type { DemoNumericField } from "@/lib/demographics";
 import { demoBinColor, formatDemoValue, getFieldRange, DEMO_FIELD_LABELS } from "@/lib/demographics";
 import type { MapTier } from "@/components/TierControl";
 
 const MAPBOX_OUTDOORS_STYLE = "mapbox://styles/mapbox/outdoors-v12";
-const CA_CENTER: [number, number] = [-119.5, 37.2];
-const CA_ZOOM = 5;
+const US_CENTER: [number, number] = [-96.0, 38.5];
+const US_ZOOM = 3.5;
 const FRESNO_COUNTY_GEOID = "06019";
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -42,7 +42,6 @@ export interface MapBounds {
 
 export interface MapViewHandle {
   flyToZip: (zip: string) => void;
-  ensureVisible: (tier: MapTier) => void;
   flyToRegion: (result: SearchResult) => void;
   fitToGeoid: (type: "state" | "county", geoid: string) => void;
   getBounds: () => MapBounds | null;
@@ -251,33 +250,58 @@ function buildStateGeoJSON(
 // (full opacity, interactive). Outer tiers stay visible as context at
 // reduced opacity. Only ZIP/circle layers are fully hidden in non-zip tiers.
 
-function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
-  // ── State layer: always visible, fades as you drill deeper ────────────
+function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | DemoNumericField) {
+  const isDemo = metric !== "aqi";
+
+  // ── State layer: always visible ────────────────────────────────────────
   if (map.getLayer(STATE_FILL)) {
-    const caFill  = tier === "state" ? 0.30 : tier === "county" ? 0.08 : 0.05;
-    const otFill  = tier === "state" ? 0.08 : tier === "county" ? 0.03 : 0.02;
-    const caHover = tier === "state" ? 0.50 : caFill;
-    map.setPaintProperty(STATE_FILL, "fill-opacity", [
-      "case",
-      ["boolean", ["feature-state", "hover"], false], caHover,
-      ["==", ["get", "isCalifornia"], true], caFill,
-      otFill,
-    ] as unknown as number);
-    const caLine  = tier === "state" ? 0.85 : tier === "county" ? 0.30 : 0.15;
-    const otLine  = tier === "state" ? 0.30 : tier === "county" ? 0.10 : 0.08;
-    map.setPaintProperty(STATE_OUTLINE, "line-opacity", [
-      "case",
-      ["boolean", ["feature-state", "hover"], false], 1.0,
-      ["==", ["get", "isCalifornia"], true], caLine,
-      otLine,
-    ] as unknown as number);
-    map.setPaintProperty(STATE_OUTLINE, "line-width", [
-      "case",
-      ["boolean", ["feature-state", "hover"], false], tier === "state" ? 3.0 : 1.5,
-      ["==", ["get", "isCalifornia"], true],
-      tier === "state" ? 1.8 : 0.8,
-      tier === "state" ? 1.0 : 0.5,
-    ] as unknown as number);
+    if (isDemo) {
+      // Demo mode: all 52 states have real data — render at equal, visible opacity
+      const fill  = tier === "state" ? 0.55 : tier === "county" ? 0.15 : 0.10;
+      const hover = tier === "state" ? 0.75 : fill;
+      map.setPaintProperty(STATE_FILL, "fill-opacity", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], hover,
+        fill,
+      ] as unknown as number);
+      const lineOp = tier === "state" ? 0.60 : tier === "county" ? 0.25 : 0.15;
+      map.setPaintProperty(STATE_OUTLINE, "line-opacity", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], 1.0,
+        lineOp,
+      ] as unknown as number);
+      map.setPaintProperty(STATE_OUTLINE, "line-width", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], tier === "state" ? 3.0 : 1.5,
+        tier === "state" ? 1.5 : 0.7,
+      ] as unknown as number);
+    } else {
+      // AQI mode: only CA has sensor data — mute all other states
+      const caFill  = tier === "state" ? 0.30 : tier === "county" ? 0.08 : 0.05;
+      const otFill  = tier === "state" ? 0.08 : tier === "county" ? 0.03 : 0.02;
+      const caHover = tier === "state" ? 0.50 : caFill;
+      map.setPaintProperty(STATE_FILL, "fill-opacity", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], caHover,
+        ["==", ["get", "isCalifornia"], true], caFill,
+        otFill,
+      ] as unknown as number);
+      const caLine  = tier === "state" ? 0.85 : tier === "county" ? 0.30 : 0.15;
+      const otLine  = tier === "state" ? 0.30 : tier === "county" ? 0.10 : 0.08;
+      map.setPaintProperty(STATE_OUTLINE, "line-opacity", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], 1.0,
+        ["==", ["get", "isCalifornia"], true], caLine,
+        otLine,
+      ] as unknown as number);
+      map.setPaintProperty(STATE_OUTLINE, "line-width", [
+        "case",
+        ["boolean", ["feature-state", "hover"], false], tier === "state" ? 3.0 : 1.5,
+        ["==", ["get", "isCalifornia"], true],
+        tier === "state" ? 1.8 : 0.8,
+        tier === "state" ? 1.0 : 0.5,
+      ] as unknown as number);
+    }
     map.setPaintProperty(STATE_OUTLINE, "line-color", [
       "case",
       ["boolean", ["feature-state", "hover"], false], "#000000",
@@ -292,17 +316,32 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
     map.setLayoutProperty(COUNTY_OUTLINE, "visibility", countyVisible ? "visible" : "none");
     if (countyVisible) {
       if (tier === "county") {
-        map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
-          "case",
-          ["boolean", ["feature-state", "hover"], false], 0.65,
-          ["==", ["get", "hasData"], 1], 0.40,
-          0.10,
-        ] as unknown as number);
-        map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
-          "case",
-          ["boolean", ["feature-state", "hover"], false], 1.0,
-          ["==", ["get", "hasData"], 1], 0.9, 0.30,
-        ] as unknown as number);
+        if (isDemo) {
+          // Demo mode: all 3,222 counties have real data — no hasData distinction
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
+            "case",
+            ["boolean", ["feature-state", "hover"], false], 0.75,
+            0.55,
+          ] as unknown as number);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
+            "case",
+            ["boolean", ["feature-state", "hover"], false], 1.0,
+            0.65,
+          ] as unknown as number);
+        } else {
+          // AQI mode: only Fresno county sensors have data
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
+            "case",
+            ["boolean", ["feature-state", "hover"], false], 0.65,
+            ["==", ["get", "hasData"], 1], 0.40,
+            0.10,
+          ] as unknown as number);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
+            "case",
+            ["boolean", ["feature-state", "hover"], false], 1.0,
+            ["==", ["get", "hasData"], 1], 0.9, 0.30,
+          ] as unknown as number);
+        }
         map.setPaintProperty(COUNTY_OUTLINE, "line-width", [
           "case",
           ["boolean", ["feature-state", "hover"], false], 3.0, 1.8,
@@ -314,12 +353,17 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier) {
         ] as unknown as string);
       } else {
         // zip tier — county is secondary context
-        map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
-          "case", ["==", ["get", "hasData"], 1], 0.10, 0.04,
-        ] as unknown as number);
-        map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
-          "case", ["==", ["get", "hasData"], 1], 0.40, 0.18,
-        ] as unknown as number);
+        if (isDemo) {
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.15);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.40);
+        } else {
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
+            "case", ["==", ["get", "hasData"], 1], 0.10, 0.04,
+          ] as unknown as number);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
+            "case", ["==", ["get", "hasData"], 1], 0.40, 0.18,
+          ] as unknown as number);
+        }
         map.setPaintProperty(COUNTY_OUTLINE, "line-width", 1.2);
       }
     }
@@ -491,56 +535,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       const [lat, lon] = centroid;
       map.flyTo({ center: [lon, lat], zoom: 12, duration: 450 });
     },
-    ensureVisible(newTier: MapTier) {
-      const map = mapRef.current;
-      if (!map) return;
-
-      if (newTier === "state") {
-        // Fit to selected state; fallback to CONUS bbox.
-        const stateFeature = stateBoundariesRef.current?.features.find(
-          (f) => f.properties.GEOID === selectedStateGeoidRef.current,
-        );
-        const bounds: mapboxgl.LngLatBoundsLike = stateFeature
-          ? geomBbox(stateFeature.geometry)
-          : [[-124.5, 32.5], [-114.1, 42.1]];
-        map.fitBounds(bounds, { padding: 20, duration: 600, maxZoom: 7 });
-      } else if (newTier === "county") {
-        // Fit to selected county's actual geometry bbox.
-        const countyFeature = countyBoundariesRef.current?.features.find(
-          (f) => f.properties.GEOID === selectedCountyGeoidRef.current,
-        );
-        if (countyFeature) {
-          map.fitBounds(geomBbox(countyFeature.geometry), { padding: 60, duration: 600, maxZoom: 11 });
-        } else {
-          // Fallback: fit to CA until boundaries load.
-          map.fitBounds([[-124.5, 32.5], [-114.1, 42.1]], { padding: 20, duration: 600, maxZoom: 7 });
-        }
-      } else if (newTier === "zip") {
-        // No forced re-zoom; pan to selected county centroid only if out of view.
-        const countyFeature = countyBoundariesRef.current?.features.find(
-          (f) => f.properties.GEOID === selectedCountyGeoidRef.current,
-        );
-        let center: [number, number];
-        let targetZoom: number;
-        if (countyFeature) {
-          const [[w, s], [e, n]] = geomBbox(countyFeature.geometry);
-          center = [(w + e) / 2, (s + n) / 2];
-          targetZoom = FRESNO_ZOOM;
-        } else {
-          center = FRESNO_CENTER as [number, number];
-          targetZoom = FRESNO_ZOOM;
-        }
-        const canvas = map.getCanvas();
-        const margin = 80;
-        const pt = map.project(center);
-        const outOfView =
-          pt.x < margin || pt.x > canvas.width - margin ||
-          pt.y < margin || pt.y > canvas.height - margin;
-        if (outOfView) {
-          map.flyTo({ center, zoom: Math.max(map.getZoom(), targetZoom), duration: 500 });
-        }
-      }
-    },
     flyToRegion(result: SearchResult) {
       const map = mapRef.current;
       if (!map) return;
@@ -648,8 +642,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         accessToken: token,
         container,
         style: MAPBOX_OUTDOORS_STYLE,
-        center: CA_CENTER,
-        zoom: CA_ZOOM,
+        center: US_CENTER,
+        zoom: US_ZOOM,
         attributionControl: true,
         preserveDrawingBuffer: true,
       });
@@ -744,7 +738,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         });
 
         // Apply correct styling for the default tier
-        applyTierStyling(map, tierRef.current);
+        applyTierStyling(map, tierRef.current, activeMetricRef.current);
         readyRef.current = true;
 
         // ── Set up test globals ─────────────────────────────────────────
@@ -1016,6 +1010,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
 
   // ── Re-color all tiers when active metric switches ──────────────────────
   useEffect(() => {
+    const map = mapRef.current;
+    if (map && readyRef.current) applyTierStyling(map, tierRef.current, activeMetric);
     syncZipBoundaries();
     syncCountyBoundaries();
     syncStateBoundaries();
@@ -1078,7 +1074,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (tooltipRef.current) tooltipRef.current.style.display = "none";
     map.getCanvas().style.cursor = "";
 
-    applyTierStyling(map, tier);
+    applyTierStyling(map, tier, activeMetricRef.current);
     type TierWin = Window & typeof globalThis & { __hfaTier?: MapTier };
     (window as TierWin).__hfaTier = tier;
   }, [tier]);
