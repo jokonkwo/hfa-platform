@@ -418,7 +418,7 @@ interface MapViewProps {
   activeMetric?: "aqi" | DemoNumericField;
   zctaDemographics?: DemographicsData[];
   countyDemographics?: DemographicsData[];
-  stateDemographic?: DemographicsData | null;
+  stateDemographics?: DemographicsData[];
   onSelectZip: (zip: string) => void;
   onStateSelect: (geoid: string, name: string) => void;
   onCountySelect: (geoid: string, name: string) => void;
@@ -432,7 +432,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     activeMetric = "aqi",
     zctaDemographics = [],
     countyDemographics = [],
-    stateDemographic = null,
+    stateDemographics = [],
     onSelectZip, onStateSelect, onCountySelect, onBoundsChange },
   ref,
 ) {
@@ -454,7 +454,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   const activeMetricRef = useRef<"aqi" | DemoNumericField>(activeMetric);
   const zctaDemographicsRef = useRef<DemographicsData[]>(zctaDemographics);
   const countyDemographicsRef = useRef<DemographicsData[]>(countyDemographics);
-  const stateDemographicRef = useRef<DemographicsData | null>(stateDemographic);
+  const stateDemographicRef = useRef<DemographicsData[]>(stateDemographics);
   const onSelectRef = useRef(onSelectZip);
   const onStateSelectRef = useRef(onStateSelect);
   const onCountySelectRef = useRef(onCountySelect);
@@ -477,7 +477,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
   activeMetricRef.current = activeMetric;
   zctaDemographicsRef.current = zctaDemographics;
   countyDemographicsRef.current = countyDemographics;
-  stateDemographicRef.current = stateDemographic;
+  stateDemographicRef.current = stateDemographics;
   onSelectRef.current = onSelectZip;
   onStateSelectRef.current = onStateSelect;
   onCountySelectRef.current = onCountySelect;
@@ -621,7 +621,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const map = mapRef.current;
     if (!map || !readyRef.current || !stateBoundariesRef.current) return;
     const metric = activeMetricRef.current;
-    const stateArr = stateDemographicRef.current ? [stateDemographicRef.current] : [];
+    const stateArr = stateDemographicRef.current; // all 52 states for national range
     const demoByGeoid = new Map(stateArr.map((d) => [d.geoid, d]));
     const fieldRange = metric !== "aqi" ? getFieldRange(metric, stateArr) : null;
     (map.getSource(STATE_SOURCE) as mapboxgl.GeoJSONSource)
@@ -1034,7 +1034,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       syncStateBoundaries();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countyDemographics, stateDemographic]);
+  }, [countyDemographics, stateDemographics]);
 
   // ── Clear hover state when tooltip is disabled ─────────────────────────
   useEffect(() => {

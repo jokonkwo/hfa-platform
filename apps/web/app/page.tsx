@@ -56,8 +56,8 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tableViewOpen, setTableViewOpen] = useState(false);
 
-  // Demographics state
-  const [stateDemographic, setStateDemographic] = useState<DemographicsData | null>(null);
+  // Demographics state — national coverage for correct color-scale computation
+  const [stateDemographics, setStateDemographics] = useState<DemographicsData[]>([]);
   const [countyDemographics, setCountyDemographics] = useState<DemographicsData[]>([]);
   const [zctaDemographics, setZctaDemographics] = useState<DemographicsData[]>([]);
 
@@ -86,7 +86,7 @@ export default function Home() {
         setState("error");
       });
     fetchStateBoundaries().then((b) => { if (b) setStateBoundaries(b); });
-    fetchDemographics("/v1/demographics/states").then((d) => setStateDemographic(d[0] ?? null));
+    fetchDemographics("/v1/demographics/states").then(setStateDemographics);
     fetchDemographics("/v1/demographics/counties").then(setCountyDemographics);
     return () => ctrl.abort();
   }, []);
@@ -263,7 +263,7 @@ export default function Home() {
             activeMetric={activeMetric}
             zctaDemographics={zctaDemographics}
             countyDemographics={countyDemographics}
-            stateDemographic={stateDemographic}
+            stateDemographics={stateDemographics}
             onSelectZip={handleSelectZip}
             onStateSelect={handleStateSelect}
             onCountySelect={handleCountySelect}
@@ -294,7 +294,7 @@ export default function Home() {
           <MapLegend
             activeMetric={activeMetric}
             tier={tier}
-            stateDemographics={stateDemographic ? [stateDemographic] : []}
+            stateDemographics={stateDemographics}
             countyDemographics={countyDemographics}
             zctaDemographics={zctaDemographics}
           />
@@ -367,7 +367,7 @@ export default function Home() {
         rows={filtered}
         fresnoAvgAqi={fresnoAvgAqi}
         countyDemographics={countyDemographics}
-        stateDemographic={stateDemographic}
+        stateDemographic={stateDemographics.find((d) => d.state_fp === "06") ?? null}
         zctaDemographics={zctaDemographics}
         countyBoundaries={countyBoundaries}
         activeMetric={activeMetric}

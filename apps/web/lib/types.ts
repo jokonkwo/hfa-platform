@@ -41,6 +41,7 @@ export interface DemographicsData {
   geoid: string;
   name: string;
   geography_level: "state" | "county" | "zcta";
+  state_fp: string;
   population: number | null;
   median_hh_income: number | null;
   median_age: number | null;
