@@ -8,6 +8,10 @@ import {
   getFieldRange,
   type DemoNumericField,
 } from "@/lib/demographics";
+
+// 5 representative swatches (darkest-blue, light-blue, neutral, light-red, darkest-red)
+// from the 7-bin palette. Underlying 7-bin classification in demographics.ts is unchanged.
+const LEGEND_SWATCHES = [DEMO_BINS[0], DEMO_BINS[2], DEMO_BINS[3], DEMO_BINS[4], DEMO_BINS[6]] as const;
 import type { DemographicsData } from "@/lib/types";
 import type { MapTier } from "@/components/TierControl";
 
@@ -82,7 +86,7 @@ function DemoLegend({
         {label}
       </p>
       <div className="flex h-3 overflow-hidden rounded">
-        {DEMO_BINS.map((color, i) => (
+        {LEGEND_SWATCHES.map((color, i) => (
           <div key={i} className="flex-1" style={{ backgroundColor: color }} />
         ))}
       </div>
