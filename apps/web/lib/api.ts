@@ -60,10 +60,12 @@ export async function fetchZipHourly(zip: string): Promise<ZipHourly[]> {
   }
 }
 
-// Fetch county boundary polygons for a given state (default: CA "06").
-export async function fetchCountyBoundaries(stateGeoid = "06"): Promise<CountyBoundaryCollection | null> {
+// Fetch county boundary polygons. Pass a stateGeoid for full-detail single-state data;
+// omit (or pass "") for all US counties with simplified geometry (~0.7 MB).
+export async function fetchCountyBoundaries(stateGeoid = ""): Promise<CountyBoundaryCollection | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries?state=${stateGeoid}`);
+    const params = stateGeoid ? `?state=${stateGeoid}` : "";
+    const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries${params}`);
     if (!res.ok) return null;
     return (await res.json()) as CountyBoundaryCollection;
   } catch {

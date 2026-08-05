@@ -86,18 +86,15 @@ export default function Home() {
         setState("error");
       });
     fetchStateBoundaries().then((b) => { if (b) setStateBoundaries(b); });
+    // Fetch all US county boundaries (simplified ~0.7 MB) — covers all 3,235 counties nationally.
+    setCountyBoundariesLoading(true);
+    fetchCountyBoundaries()
+      .then((b) => { if (b) setCountyBoundaries(b); })
+      .finally(() => setCountyBoundariesLoading(false));
     fetchDemographics("/v1/demographics/states").then(setStateDemographics);
     fetchDemographics("/v1/demographics/counties").then(setCountyDemographics);
     return () => ctrl.abort();
   }, []);
-
-  // Refetch county boundaries whenever the selected state changes.
-  useEffect(() => {
-    setCountyBoundariesLoading(true);
-    fetchCountyBoundaries(selectedStateGeoid)
-      .then((b) => { if (b) setCountyBoundaries(b); })
-      .finally(() => setCountyBoundariesLoading(false));
-  }, [selectedStateGeoid]);
 
   // Fetch ZIP→city mapping whenever the county changes (for ZIP tier table city column).
   useEffect(() => {
@@ -168,7 +165,6 @@ export default function Home() {
 
   const handleTierChange = useCallback((newTier: MapTier) => {
     setTier(newTier);
-    mapRef.current?.ensureVisible(newTier);
   }, []);
 
   const handleStateSelect = useCallback((geoid: string, _name: string) => {
