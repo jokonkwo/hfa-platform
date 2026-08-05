@@ -1,8 +1,15 @@
 """
 Annual refresh: Census ACS 5-Year Data Profile → MotherDuck HFA_DEV.raw_acs_demographics.
 
-Pulls ACS 2024 (and 2023 for growth calcs) at state, county, and ZCTA levels for
-California. Re-runnable via CREATE OR REPLACE TABLE.
+Pulls ACS 2024 (and 2023 for growth calcs) at:
+  - STATE level: all 52 US states/territories (for=state:*)
+  - COUNTY level: all ~3,222 US counties nationally (for=county:*&in=state:*)
+  - ZCTA level: California only (filtered from national pull; no change)
+
+National state/county coverage enables genuine nationwide color scales on the map
+instead of California-internal-only comparison.
+
+Re-runnable via CREATE OR REPLACE TABLE.
 
 Run from repo root:
     python -m pipelines.ingestion.acs.load_acs_demographics [--check] [--vintage YEAR]
@@ -41,6 +48,10 @@ CENSUS_BASE = "https://api.census.gov/data"
 
 # ZCTAs for California — full range 900–961 (all valid CA 3-digit prefixes)
 CA_ZIP_PREFIXES = tuple(f"{p:03d}" for p in range(900, 962))
+
+# State FP codes present in Census API response (50 states + DC + PR + territories)
+# Used only for sanity checks; all states fetched via wildcard.
+_ALL_STATE_GEO_LEVELS = ("state", "county", "zcta")
 
 
 def _null(v: Any) -> Any:
@@ -88,191 +99,104 @@ def _fetch(url: str) -> list[list]:
     return []
 
 
+def _parse_rows(rows: list[list], headers: list[str], geoid_fn, name_fn, state_fp_fn) -> list[dict]:
+    """Generic row parser for any ACS geography level."""
+    idx = {h: i for i, h in enumerate(headers)}
+    out = []
+    for row in rows:
+        pop = _null(row[idx["DP05_0001E"]])
+        income = _null(row[idx["DP03_0062E"]])
+        age = _null(row[idx["DP05_0018E"]])
+        poverty = _null(row[idx["DP03_0128PE"]])
+        ed_9th = _null(row[idx["DP02_0060PE"]])
+        ed_nodip = _null(row[idx["DP02_0061PE"]])
+        unemp = _null(row[idx["DP03_0009PE"]])
+        lim_eng = _null(row[idx["DP02_0115PE"]])
+        rent_30_34 = _null(row[idx["DP04_0141E"]])
+        rent_35p = _null(row[idx["DP04_0142E"]])
+        rent_total = _null(row[idx["DP04_0136E"]])
+
+        ed_hs = (
+            round((ed_9th or 0) + (ed_nodip or 0), 2)
+            if ed_9th is not None or ed_nodip is not None
+            else None
+        )
+        housing_burden = (
+            round((rent_30_34 + rent_35p) / rent_total * 100, 2)
+            if rent_total and rent_total > 0 and rent_30_34 is not None and rent_35p is not None
+            else None
+        )
+
+        out.append({
+            "geoid": geoid_fn(row, idx),
+            "name": name_fn(row, idx),
+            "state_fp": state_fp_fn(row, idx),
+            "population": int(pop) if pop is not None else None,
+            "median_hh_income": income,
+            "median_age": age,
+            "poverty_rate_pct": poverty,
+            "ed_less_than_hs_pct": ed_hs,
+            "unemployment_rate_pct": unemp,
+            "limited_english_pct": lim_eng,
+            "housing_cost_burden_pct": housing_burden,
+        })
+    return out
+
+
 def _pull_vintage(vintage: int, api_key: str) -> dict[str, list[dict]]:
-    """Return {'state': [...], 'county': [...], 'zcta': [...]} for one vintage."""
+    """Return {'state': [...], 'county': [...], 'zcta': [...]} for one vintage.
+
+    STATE and COUNTY are pulled nationally (all US states/territories).
+    ZCTA is pulled nationally then filtered to California only.
+    """
     base = f"{CENSUS_BASE}/{vintage}/acs/acs5/profile"
-
-    def _parse(rows: list[list], headers: list[str], geo_level: str, geoid_col: str, name_fn=None) -> list[dict]:
-        idx = {h: i for i, h in enumerate(headers)}
-        out = []
-        for row in rows:
-            geoid = row[idx[geoid_col]]
-            name = name_fn(row, idx) if name_fn else geoid
-
-            pop = _null(row[idx.get("DP05_0001E", -1)] if "DP05_0001E" in idx else None)
-            income = _null(row[idx.get("DP03_0062E", -1)] if "DP03_0062E" in idx else None)
-            age = _null(row[idx.get("DP05_0018E", -1)] if "DP05_0018E" in idx else None)
-            poverty = _null(row[idx.get("DP03_0128PE", -1)] if "DP03_0128PE" in idx else None)
-            ed_9th = _null(row[idx.get("DP02_0060PE", -1)] if "DP02_0060PE" in idx else None)
-            ed_nodip = _null(row[idx.get("DP02_0061PE", -1)] if "DP02_0061PE" in idx else None)
-            unemp = _null(row[idx.get("DP03_0009PE", -1)] if "DP03_0009PE" in idx else None)
-            lim_eng = _null(row[idx.get("DP02_0115PE", -1)] if "DP02_0115PE" in idx else None)
-            rent_30_34 = _null(row[idx.get("DP04_0141E", -1)] if "DP04_0141E" in idx else None)
-            rent_35p = _null(row[idx.get("DP04_0142E", -1)] if "DP04_0142E" in idx else None)
-            rent_total = _null(row[idx.get("DP04_0136E", -1)] if "DP04_0136E" in idx else None)
-
-            ed_hs = (
-                round((ed_9th or 0) + (ed_nodip or 0), 2)
-                if ed_9th is not None or ed_nodip is not None
-                else None
-            )
-            housing_burden = (
-                round((rent_30_34 + rent_35p) / rent_total * 100, 2)
-                if rent_total and rent_total > 0 and rent_30_34 is not None and rent_35p is not None
-                else None
-            )
-
-            out.append({
-                "geoid": geoid,
-                "name": name,
-                "state_fp": row[idx["state"]] if "state" in idx else CA_FIPS,
-                "population": int(pop) if pop is not None else None,
-                "median_hh_income": income,
-                "median_age": age,
-                "poverty_rate_pct": poverty,
-                "ed_less_than_hs_pct": ed_hs,
-                "unemployment_rate_pct": unemp,
-                "limited_english_pct": lim_eng,
-                "housing_cost_burden_pct": housing_burden,
-            })
-        return out
-
     results = {}
 
-    # State
-    print(f"  [{vintage}] Fetching state...", end=" ", flush=True)
-    url = f"{base}?get={VARS_MAIN}&for=state:{CA_FIPS}&key={api_key}"
-    raw = _fetch(url)
+    # ── All states nationally ────────────────────────────────────────────────
+    print(f"  [{vintage}] Fetching all states (national)...", end=" ", flush=True)
+    raw = _fetch(f"{base}?get={VARS_MAIN}&for=state:*&key={api_key}")
     headers = raw[0]
-    state_rows = _parse(raw[1:], headers, "state", "state",
-                        name_fn=lambda r, idx: "California")
+    state_rows = _parse_rows(
+        raw[1:], headers,
+        geoid_fn=lambda r, idx: r[idx["state"]],
+        name_fn=lambda r, idx: r[idx.get("NAME", 0)] if "NAME" in idx else r[idx["state"]],
+        state_fp_fn=lambda r, idx: r[idx["state"]],
+    )
     results["state"] = state_rows
     print(f"{len(state_rows)} rows", flush=True)
-    time.sleep(0.3)
+    time.sleep(0.4)
 
-    # County
-    print(f"  [{vintage}] Fetching counties...", end=" ", flush=True)
-    url = f"{base}?get={VARS_MAIN}&for=county:*&in=state:{CA_FIPS}&key={api_key}"
-    raw = _fetch(url)
+    # ── All counties nationally ───────────────────────────────────────────────
+    print(f"  [{vintage}] Fetching all counties (national)...", end=" ", flush=True)
+    raw = _fetch(f"{base}?get={VARS_MAIN}&for=county:*&in=state:*&key={api_key}")
     headers = raw[0]
-
-    def _county_geoid(row, idx):
-        return row[idx["state"]] + row[idx["county"]]
-
-    def _county_name(row, idx):
-        # We'll fill from MotherDuck later; use placeholder
-        return row[idx["county"]]
-
-    county_rows_raw = raw[1:]
-
-    def _parse_county(rows, headers):
-        idx = {h: i for i, h in enumerate(headers)}
-        out = []
-        for row in rows:
-            geoid = row[idx["state"]] + row[idx["county"]]
-            name = geoid  # placeholder; replaced below via MotherDuck lookup
-
-            pop = _null(row[idx["DP05_0001E"]])
-            income = _null(row[idx["DP03_0062E"]])
-            age = _null(row[idx["DP05_0018E"]])
-            poverty = _null(row[idx["DP03_0128PE"]])
-            ed_9th = _null(row[idx["DP02_0060PE"]])
-            ed_nodip = _null(row[idx["DP02_0061PE"]])
-            unemp = _null(row[idx["DP03_0009PE"]])
-            lim_eng = _null(row[idx["DP02_0115PE"]])
-            rent_30_34 = _null(row[idx["DP04_0141E"]])
-            rent_35p = _null(row[idx["DP04_0142E"]])
-            rent_total = _null(row[idx["DP04_0136E"]])
-
-            ed_hs = (
-                round((ed_9th or 0) + (ed_nodip or 0), 2)
-                if ed_9th is not None or ed_nodip is not None
-                else None
-            )
-            housing_burden = (
-                round((rent_30_34 + rent_35p) / rent_total * 100, 2)
-                if rent_total and rent_total > 0 and rent_30_34 is not None and rent_35p is not None
-                else None
-            )
-
-            out.append({
-                "geoid": geoid,
-                "name": name,
-                "state_fp": CA_FIPS,
-                "population": int(pop) if pop is not None else None,
-                "median_hh_income": income,
-                "median_age": age,
-                "poverty_rate_pct": poverty,
-                "ed_less_than_hs_pct": ed_hs,
-                "unemployment_rate_pct": unemp,
-                "limited_english_pct": lim_eng,
-                "housing_cost_burden_pct": housing_burden,
-            })
-        return out
-
-    county_rows = _parse_county(county_rows_raw, headers)
+    # geoid = state_fp (2 digits) + county_fp (3 digits) = 5-char FIPS
+    county_rows = _parse_rows(
+        raw[1:], headers,
+        geoid_fn=lambda r, idx: r[idx["state"]] + r[idx["county"]],
+        name_fn=lambda r, idx: r[idx["state"]] + r[idx["county"]],  # placeholder; replaced below
+        state_fp_fn=lambda r, idx: r[idx["state"]],
+    )
     results["county"] = county_rows
     print(f"{len(county_rows)} rows", flush=True)
-    time.sleep(0.3)
+    time.sleep(0.4)
 
-    # ZCTA (national pull, filter to CA)
-    print(f"  [{vintage}] Fetching ZCTAs (national)...", end=" ", flush=True)
-    url = f"{base}?get={VARS_MAIN}&for=zip%20code%20tabulation%20area:*&key={api_key}"
-    raw = _fetch(url)
+    # ── ZCTAs — national pull, filter to CA ──────────────────────────────────
+    print(f"  [{vintage}] Fetching ZCTAs (national, filtering to CA)...", end=" ", flush=True)
+    raw = _fetch(f"{base}?get={VARS_MAIN}&for=zip%20code%20tabulation%20area:*&key={api_key}")
     headers_zcta = raw[0]
     idx_zcta = {h: i for i, h in enumerate(headers_zcta)}
     zip_col = "zip code tabulation area"
-
-    all_zcta_rows = raw[1:]
-    ca_zcta_rows = [r for r in all_zcta_rows if r[idx_zcta[zip_col]][:3] in CA_ZIP_PREFIXES]
-
-    def _parse_zcta(rows, headers):
-        idx = {h: i for i, h in enumerate(headers)}
-        zcol = "zip code tabulation area"
-        out = []
-        for row in rows:
-            zip5 = row[idx[zcol]]
-            pop = _null(row[idx["DP05_0001E"]])
-            income = _null(row[idx["DP03_0062E"]])
-            age = _null(row[idx["DP05_0018E"]])
-            poverty = _null(row[idx["DP03_0128PE"]])
-            ed_9th = _null(row[idx["DP02_0060PE"]])
-            ed_nodip = _null(row[idx["DP02_0061PE"]])
-            unemp = _null(row[idx["DP03_0009PE"]])
-            lim_eng = _null(row[idx["DP02_0115PE"]])
-            rent_30_34 = _null(row[idx["DP04_0141E"]])
-            rent_35p = _null(row[idx["DP04_0142E"]])
-            rent_total = _null(row[idx["DP04_0136E"]])
-
-            ed_hs = (
-                round((ed_9th or 0) + (ed_nodip or 0), 2)
-                if ed_9th is not None or ed_nodip is not None
-                else None
-            )
-            housing_burden = (
-                round((rent_30_34 + rent_35p) / rent_total * 100, 2)
-                if rent_total and rent_total > 0 and rent_30_34 is not None and rent_35p is not None
-                else None
-            )
-
-            out.append({
-                "geoid": zip5,
-                "name": zip5,
-                "state_fp": CA_FIPS,
-                "population": int(pop) if pop is not None else None,
-                "median_hh_income": income,
-                "median_age": age,
-                "poverty_rate_pct": poverty,
-                "ed_less_than_hs_pct": ed_hs,
-                "unemployment_rate_pct": unemp,
-                "limited_english_pct": lim_eng,
-                "housing_cost_burden_pct": housing_burden,
-            })
-        return out
-
-    zcta_rows = _parse_zcta(ca_zcta_rows, headers_zcta)
+    all_zcta = raw[1:]
+    ca_zcta = [r for r in all_zcta if r[idx_zcta[zip_col]][:3] in CA_ZIP_PREFIXES]
+    zcta_rows = _parse_rows(
+        ca_zcta, headers_zcta,
+        geoid_fn=lambda r, idx: r[idx["zip code tabulation area"]],
+        name_fn=lambda r, idx: r[idx["zip code tabulation area"]],
+        state_fp_fn=lambda r, _idx: CA_FIPS,
+    )
     results["zcta"] = zcta_rows
-    print(f"{len(all_zcta_rows)} national → {len(zcta_rows)} CA rows", flush=True)
+    print(f"{len(all_zcta)} national → {len(zcta_rows)} CA rows", flush=True)
 
     return results
 
@@ -302,15 +226,25 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
     con = duckdb.connect("md:HFA_DEV", config={"motherduck_token": tok})
     con.execute("LOAD spatial")
 
-    # Fetch county names from raw_us_counties (already in MotherDuck)
-    print("Fetching county names from MotherDuck...", flush=True)
+    # Fetch county names nationally from raw_us_counties (already national in MotherDuck)
+    print("Fetching county names from MotherDuck (national)...", flush=True)
     county_names = {
         row[0]: row[1]
         for row in con.execute(
-            "SELECT geoid, name_lsad FROM raw_us_counties WHERE state_fp = ?",
-            [CA_FIPS],
+            "SELECT geoid, name_lsad FROM raw_us_counties"
         ).fetchall()
     }
+    print(f"  Loaded {len(county_names)} county names", flush=True)
+
+    # Fetch state names from raw_us_states
+    print("Fetching state names from MotherDuck...", flush=True)
+    state_names = {
+        row[0]: row[1]
+        for row in con.execute(
+            "SELECT state_fp, name FROM raw_us_states"
+        ).fetchall()
+    }
+    print(f"  Loaded {len(state_names)} state names", flush=True)
 
     # Build final rows (2024 vintage only, with growth rates from 2023)
     final_rows: list[tuple] = []
@@ -325,7 +259,9 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
             geoid = row["geoid"]
             name = row["name"]
 
-            if level == "county":
+            if level == "state":
+                name = state_names.get(geoid, geoid)
+            elif level == "county":
                 name = county_names.get(geoid, geoid)
 
             prior = rows_prior.get(geoid)
@@ -362,32 +298,23 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
                 income_growth,
             ))
 
-    print(f"\nInserting {len(final_rows)} rows into raw_acs_demographics...", flush=True)
-    con.execute("""
-        CREATE OR REPLACE TABLE raw_acs_demographics (
-            vintage INTEGER,
-            geography_level VARCHAR,
-            geoid VARCHAR,
-            name VARCHAR,
-            state_fp VARCHAR,
-            population BIGINT,
-            median_hh_income DOUBLE,
-            median_age DOUBLE,
-            poverty_rate_pct DOUBLE,
-            ed_less_than_hs_pct DOUBLE,
-            unemployment_rate_pct DOUBLE,
-            limited_english_pct DOUBLE,
-            housing_cost_burden_pct DOUBLE,
-            pop_density_per_sq_mi DOUBLE,
-            pop_growth_pct DOUBLE,
-            income_growth_pct DOUBLE
-        )
-    """)
+    import pandas as pd
 
-    con.executemany(
-        "INSERT INTO raw_acs_demographics VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        final_rows,
-    )
+    cols = [
+        "vintage", "geography_level", "geoid", "name", "state_fp",
+        "population", "median_hh_income", "median_age", "poverty_rate_pct",
+        "ed_less_than_hs_pct", "unemployment_rate_pct", "limited_english_pct",
+        "housing_cost_burden_pct", "pop_density_per_sq_mi",
+        "pop_growth_pct", "income_growth_pct",
+    ]
+    df = pd.DataFrame(final_rows, columns=cols)
+    df = df.astype({
+        "vintage": "Int64", "population": "Int64",
+    })
+
+    print(f"\nInserting {len(df)} rows into raw_acs_demographics (bulk via DataFrame)...", flush=True)
+    # Single CREATE AS SELECT — avoids row-by-row executemany lease timeout on MotherDuck
+    con.execute("CREATE OR REPLACE TABLE raw_acs_demographics AS SELECT * FROM df")
 
     # Compute population density via spatial join against existing geometry tables
     print("Computing population density via spatial joins...", flush=True)
@@ -460,18 +387,57 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
     for level, count in counts:
         print(f"  {level}: {count} rows")
 
-    samples = con.execute("""
-        SELECT geography_level, name, population, median_hh_income, pop_density_per_sq_mi
-        FROM raw_acs_demographics
-        WHERE name IN ('California', 'Fresno County', '93701')
-        ORDER BY geography_level
+    # National range verification
+    print("\n  National ranges (state tier):")
+    ranges = con.execute("""
+        SELECT
+            'population' AS field, MIN(population), MAX(population),
+            (SELECT name FROM raw_acs_demographics WHERE geography_level='state' ORDER BY population ASC LIMIT 1) AS min_name,
+            (SELECT name FROM raw_acs_demographics WHERE geography_level='state' ORDER BY population DESC LIMIT 1) AS max_name
+        FROM raw_acs_demographics WHERE geography_level = 'state'
+        UNION ALL
+        SELECT 'median_hh_income', MIN(median_hh_income), MAX(median_hh_income),
+            (SELECT name FROM raw_acs_demographics WHERE geography_level='state' AND median_hh_income IS NOT NULL ORDER BY median_hh_income ASC LIMIT 1),
+            (SELECT name FROM raw_acs_demographics WHERE geography_level='state' AND median_hh_income IS NOT NULL ORDER BY median_hh_income DESC LIMIT 1)
+        FROM raw_acs_demographics WHERE geography_level = 'state'
     """).fetchall()
-    print("\n  Sample rows:")
-    for row in samples:
-        print(f"    {row[0]}: {row[1]}, pop={row[2]:,}, income={row[3]}, density={row[4]}")
+    for field, mn, mx, mn_name, mx_name in ranges:
+        print(f"    {field}: {mn:,.0f} ({mn_name}) → {mx:,.0f} ({mx_name})")
+
+    print("\n  National ranges (county tier — income):")
+    county_income = con.execute("""
+        SELECT MIN(median_hh_income), MAX(median_hh_income),
+            (SELECT name FROM raw_acs_demographics WHERE geography_level='county' AND median_hh_income IS NOT NULL ORDER BY median_hh_income ASC LIMIT 1) AS min_name,
+            (SELECT name FROM raw_acs_demographics WHERE geography_level='county' AND median_hh_income IS NOT NULL ORDER BY median_hh_income DESC LIMIT 1) AS max_name
+        FROM raw_acs_demographics WHERE geography_level = 'county'
+    """).fetchall()
+    for mn, mx, mn_name, mx_name in county_income:
+        print(f"    median_hh_income: {mn:,.0f} ({mn_name}) → {mx:,.0f} ({mx_name})")
+
+    print("\n  CA county income sample (national context):")
+    ca_income = con.execute("""
+        SELECT name, median_hh_income,
+            PERCENT_RANK() OVER (ORDER BY median_hh_income) * 100 AS national_pct_rank
+        FROM raw_acs_demographics
+        WHERE geography_level = 'county' AND state_fp = '06' AND median_hh_income IS NOT NULL
+        ORDER BY name
+        LIMIT 8
+    """).fetchall()
+    for name, income, pct in ca_income:
+        print(f"    {name}: ${income:,.0f} (national pct rank: {pct:.1f}%)")
+
+    print("\n  ZCTA unchanged check (Fresno ZIPs):")
+    zcta_check = con.execute("""
+        SELECT name, population, median_hh_income
+        FROM raw_acs_demographics
+        WHERE geography_level = 'zcta' AND geoid IN ('93701','93702','93705','93710')
+        ORDER BY geoid
+    """).fetchall()
+    for name, pop, income in zcta_check:
+        print(f"    {name}: pop={pop}, income={income}")
 
     con.close()
-    print("\nDone. raw_acs_demographics is now in HFA_DEV.main")
+    print("\nDone. raw_acs_demographics is now in HFA_DEV.main (national state+county coverage)")
 
 
 if __name__ == "__main__":

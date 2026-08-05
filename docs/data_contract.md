@@ -413,7 +413,9 @@ Array ordered by `date DESC`. May be empty if no daily data exists for that ZIP.
 
 ### `GET /v1/demographics/states` — ACS state-level demographics
 
-Returns a JSON array with one object: California's ACS 2024 5-Year demographics. Registered under `apps/api/src/hfa_api/routes/demographics.py`.
+Returns a JSON array of all 52 US states/territories (ACS 2024 5-Year). Used by the frontend to compute the **national** color-scale range so CA's position is placed in true national context. No query params. Registered under `apps/api/src/hfa_api/routes/demographics.py`.
+
+Each object also includes `state_fp` (same as `geoid` for states).
 
 ```json
 [
@@ -421,6 +423,7 @@ Returns a JSON array with one object: California's ACS 2024 5-Year demographics.
     "geoid": "06",
     "name": "California",
     "geography_level": "state",
+    "state_fp": "06",
     "population": 39287377,
     "median_hh_income": 99122.0,
     "median_age": 38.2,
@@ -436,9 +439,11 @@ Returns a JSON array with one object: California's ACS 2024 5-Year demographics.
 ]
 ```
 
+**National income range (states, 2024 ACS):** $26,297 (PR) → $109,870 (MD).
+
 ### `GET /v1/demographics/counties` — ACS county-level demographics
 
-**Query params:** `?state_fp=06` (default `"06"` = California). Returns all 58 CA counties.
+**Query params:** `?state_fp=<fips>` (optional). When omitted, returns all ~3,222 US counties for national color-scale computation. When provided (e.g. `?state_fp=06`), returns only that state's counties.
 
 ```json
 [
@@ -513,7 +518,7 @@ Single object. Returns 404 if no discovery data available for today.
 ### `raw_acs_demographics`
 **Source:** US Census Bureau ACS 5-Year Data Profiles (`/data/{vintage}/acs/acs5/profile`)  
 **Loaded by:** `pipelines/ingestion/acs/load_acs_demographics.py`  
-**Rows:** 1,861 rows for vintage 2024 (1 state, 58 counties, 1,802 ZCTAs covering California ZIP prefix 900–961)  
+**Rows:** 5,076 rows for vintage 2024 (52 states/territories, 3,222 counties nationally, 1,802 CA ZCTAs covering ZIP prefix 900–961)  
 **Grain:** (vintage, geography_level, geoid)  
 **Refresh cadence:** Annual (run manually once per ACS release cycle)
 
@@ -538,7 +543,12 @@ Single object. Returns 404 if no discovery data available for today.
 
 **Suppression codes:** Census values -666666666, -999999999, -888888888 are stored as NULL.
 
-**ZCTA coverage note:** ZCTAs are fetched nationally and filtered client-side to CA ZIP prefixes 900–961. All 55 Fresno County ZCTAs are included.
+**Coverage notes:**
+- States: all 52 US states and territories (national — used for color-scale baseline)
+- Counties: all 3,222 US counties (national — used for color-scale baseline)
+- ZCTAs: CA ZIP prefixes 900–961 only (1,802 rows). All 55 Fresno County ZCTAs included.
+- National income range (states): $26,297 (PR) → $109,870 (MD)
+- National income range (counties): $16,314 → $181,765
 
 ---
 

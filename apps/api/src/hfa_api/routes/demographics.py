@@ -31,11 +31,12 @@ def _row_to_dict(row: tuple) -> dict:
     return dict(zip(_FIELDS, row))
 
 
-@router.get("/states", summary="ACS demographics for California state")
+@router.get("/states", summary="ACS demographics for all US states/territories")
 def get_state_demographics() -> JSONResponse:
+    """Returns all 52 US states/territories for national color-scale computation."""
     try:
         rows = query_rows(
-            f"{_BASE_SQL} AND geography_level = 'state' AND state_fp = '06'",
+            f"{_BASE_SQL} AND geography_level = 'state' ORDER BY name",
         )
     except Exception as exc:
         logger.warning("State demographics error: %s", exc)
@@ -43,15 +44,22 @@ def get_state_demographics() -> JSONResponse:
     return JSONResponse(content=[_row_to_dict(r) for r in rows])
 
 
-@router.get("/counties", summary="ACS demographics for all CA counties")
+@router.get("/counties", summary="ACS demographics for all US counties or a single state")
 def get_county_demographics(
-    state_fp: str = Query(default="06", max_length=2),
+    state_fp: str = Query(default="", max_length=2),
 ) -> JSONResponse:
+    """Returns all ~3,222 US counties when state_fp is omitted (for national color-scale
+    computation). Pass state_fp to filter to a single state."""
     try:
-        rows = query_rows(
-            f"{_BASE_SQL} AND geography_level = 'county' AND state_fp = ?",
-            [state_fp],
-        )
+        if state_fp:
+            rows = query_rows(
+                f"{_BASE_SQL} AND geography_level = 'county' AND state_fp = ? ORDER BY name",
+                [state_fp],
+            )
+        else:
+            rows = query_rows(
+                f"{_BASE_SQL} AND geography_level = 'county' ORDER BY name",
+            )
     except Exception as exc:
         logger.warning("County demographics error: %s", exc)
         return JSONResponse(content=[], status_code=503)
