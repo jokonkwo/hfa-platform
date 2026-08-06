@@ -660,6 +660,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         style: MAPBOX_OUTDOORS_STYLE,
         center: US_CENTER,
         zoom: US_ZOOM,
+        minZoom: 2.5,
         projection: "mercator",
         attributionControl: true,
         preserveDrawingBuffer: true,
