@@ -256,9 +256,9 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
   // ── State layer: always visible ────────────────────────────────────────
   if (map.getLayer(STATE_FILL)) {
     if (isDemo) {
-      // Demo mode: all 52 states have real data — render at equal, visible opacity
-      const fill  = tier === "state" ? 0.55 : tier === "county" ? 0.15 : 0.10;
-      const hover = tier === "state" ? 0.75 : fill;
+      // Demo mode: all 52 states have real data — render at vivid, equal opacity
+      const fill  = tier === "state" ? 0.80 : tier === "county" ? 0.18 : 0.12;
+      const hover = tier === "state" ? 0.92 : fill;
       map.setPaintProperty(STATE_FILL, "fill-opacity", [
         "case",
         ["boolean", ["feature-state", "hover"], false], hover,
@@ -317,16 +317,16 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     if (countyVisible) {
       if (tier === "county") {
         if (isDemo) {
-          // Demo mode: all 3,222 counties have real data — no hasData distinction
+          // Demo mode: all 3,222 counties have real data — render at vivid, equal opacity
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case",
-            ["boolean", ["feature-state", "hover"], false], 0.75,
-            0.55,
+            ["boolean", ["feature-state", "hover"], false], 0.92,
+            0.80,
           ] as unknown as number);
           map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
             "case",
             ["boolean", ["feature-state", "hover"], false], 1.0,
-            0.65,
+            0.70,
           ] as unknown as number);
         } else {
           // AQI mode: only Fresno county sensors have data
@@ -386,17 +386,33 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     map.setLayoutProperty(ZIP_BOUNDARY_FILL,    "visibility", zipVisible ? "visible" : "none");
     map.setLayoutProperty(ZIP_BOUNDARY_OUTLINE, "visibility", zipVisible ? "visible" : "none");
     if (zipVisible) {
-      map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
-        "case",
-        ["boolean", ["feature-state", "hover"], false], 0.60,
-        ["==", ["get", "hasData"], 1], 0.35,
-        0.18,
-      ] as unknown as number);
-      map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
-        "case",
-        ["boolean", ["feature-state", "hover"], false], 1.0,
-        ["==", ["get", "hasData"], 1], 0.90, 0.55,
-      ] as unknown as number);
+      if (isDemo) {
+        // Demo mode: all ZCTAs have demographic data — uniform vivid opacity
+        // (ignoring AQI hasData so rural ZIPs aren't dimmed vs pilot ZIPs)
+        map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 0.92,
+          0.78,
+        ] as unknown as number);
+        map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 1.0,
+          0.85,
+        ] as unknown as number);
+      } else {
+        // AQI mode: dim ZIPs that have no sensor data
+        map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 0.60,
+          ["==", ["get", "hasData"], 1], 0.35,
+          0.18,
+        ] as unknown as number);
+        map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
+          "case",
+          ["boolean", ["feature-state", "hover"], false], 1.0,
+          ["==", ["get", "hasData"], 1], 0.90, 0.55,
+        ] as unknown as number);
+      }
       map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-width", [
         "case",
         ["boolean", ["feature-state", "hover"], false], 4.0,

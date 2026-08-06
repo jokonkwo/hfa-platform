@@ -60,25 +60,38 @@ export async function fetchZipHourly(zip: string): Promise<ZipHourly[]> {
   }
 }
 
+// Module-level caches — survive re-renders; county/ZIP boundary GeoJSON is static
+// within a session and can be large (LA County ZIPs = 295 features, ~1MB).
+const countyBoundaryCache = new Map<string, CountyBoundaryCollection>();
+const zipBoundaryCache    = new Map<string, BoundaryCollection>();
+
 // Fetch county boundary polygons. Pass a stateGeoid for full-detail single-state data;
 // omit (or pass "") for all US counties with simplified geometry (~0.7 MB).
 export async function fetchCountyBoundaries(stateGeoid = ""): Promise<CountyBoundaryCollection | null> {
+  if (countyBoundaryCache.has(stateGeoid)) return countyBoundaryCache.get(stateGeoid)!;
   try {
     const params = stateGeoid ? `?state=${stateGeoid}` : "";
     const res = await fetch(`${API_BASE_URL}/v1/counties/boundaries${params}`);
     if (!res.ok) return null;
-    return (await res.json()) as CountyBoundaryCollection;
+    const data = (await res.json()) as CountyBoundaryCollection;
+    countyBoundaryCache.set(stateGeoid, data);
+    return data;
   } catch {
     return null;
   }
 }
 
 // Fetch ZIP boundary polygons for a given county (default: Fresno "06019").
+// Client-side cache avoids re-fetching the same county (cold server fetch can
+// be 1–12s depending on county size; cached = instant).
 export async function fetchZipBoundaries(countyGeoid = "06019"): Promise<BoundaryCollection | null> {
+  if (zipBoundaryCache.has(countyGeoid)) return zipBoundaryCache.get(countyGeoid)!;
   try {
     const res = await fetch(`${API_BASE_URL}/v1/zips/boundaries?county=${countyGeoid}`);
     if (!res.ok) return null;
-    return (await res.json()) as BoundaryCollection;
+    const data = (await res.json()) as BoundaryCollection;
+    zipBoundaryCache.set(countyGeoid, data);
+    return data;
   } catch {
     return null;
   }
