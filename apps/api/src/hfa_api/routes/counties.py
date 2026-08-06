@@ -13,13 +13,17 @@ router = APIRouter()
 
 @lru_cache(maxsize=64)
 def _fetch_county_boundaries(state: str) -> list[dict]:
-    """Fetch county GeoJSON features for a state (full detail), cached per process."""
+    """Fetch county GeoJSON for a state with fine-detail simplification (0.005° ≈ 500m).
+
+    10× finer than the national simplified endpoint (0.05°). Eliminates visible stair-stepping
+    at county-browsing zoom levels (6–9) without the 6+ MB payload of raw Census geometry.
+    """
     rows = query_rows(
         """
         SELECT geoid, name, name_lsad,
                ST_X(ST_Centroid(geom)) AS centroid_lon,
                ST_Y(ST_Centroid(geom)) AS centroid_lat,
-               ST_AsGeoJSON(geom) AS geometry_json
+               ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.005)) AS geometry_json
         FROM raw_us_counties
         WHERE state_fp = ?
         ORDER BY name

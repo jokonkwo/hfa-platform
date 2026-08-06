@@ -86,15 +86,37 @@ export default function Home() {
         setState("error");
       });
     fetchStateBoundaries().then((b) => { if (b) setStateBoundaries(b); });
-    // Fetch all US county boundaries (simplified ~0.7 MB) — covers all 3,235 counties nationally.
-    setCountyBoundariesLoading(true);
-    fetchCountyBoundaries()
-      .then((b) => { if (b) setCountyBoundaries(b); })
-      .finally(() => setCountyBoundariesLoading(false));
     fetchDemographics("/v1/demographics/states").then(setStateDemographics);
     fetchDemographics("/v1/demographics/counties").then(setCountyDemographics);
     return () => ctrl.abort();
   }, []);
+
+  // Reload county boundaries whenever the selected state changes.
+  // Parallel-fetches national simplified (cached after first load) + per-state fine-detail
+  // (0.005° ≈ 500m tolerance, ~128 KB for CA). Merges: per-state features replace the
+  // corresponding simplified features so county boundaries look crisp at county-browsing zoom.
+  useEffect(() => {
+    setCountyBoundariesLoading(true);
+    const targetState = selectedStateGeoid || "06";
+    Promise.all([
+      fetchCountyBoundaries(""),         // national simplified ~1.3 MB (cached)
+      fetchCountyBoundaries(targetState), // per-state fine-detail ~128 KB for CA
+    ]).then(([national, stateDetail]) => {
+      if (!national) return;
+      if (stateDetail) {
+        const detailGeoids = new Set(stateDetail.features.map((f) => f.properties.GEOID));
+        setCountyBoundaries({
+          ...national,
+          features: [
+            ...national.features.filter((f) => !detailGeoids.has(f.properties.GEOID)),
+            ...stateDetail.features,
+          ],
+        });
+      } else {
+        setCountyBoundaries(national);
+      }
+    }).finally(() => setCountyBoundariesLoading(false));
+  }, [selectedStateGeoid]);
 
   // Fetch ZIP→city mapping whenever the county changes (for ZIP tier table city column).
   useEffect(() => {
