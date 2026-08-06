@@ -10,21 +10,38 @@ export const DEMO_BINS = [
   "#B91C1C",
 ] as const;
 
-export function getBin(value: number, min: number, max: number): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
-  if (max === min) return 3;
-  const ratio = (value - min) / (max - min);
-  if (ratio < 1 / 7) return 0;
-  if (ratio < 2 / 7) return 1;
-  if (ratio < 3 / 7) return 2;
-  if (ratio < 4 / 7) return 3;
-  if (ratio < 5 / 7) return 4;
-  if (ratio < 6 / 7) return 5;
+// Compute 6 quantile breakpoints that divide `allData` into 7 equal-count bins.
+// Returns null when there is insufficient data to bin.
+export function getQuantileBreakpoints(
+  field: DemoNumericField,
+  allData: DemographicsData[],
+): number[] | null {
+  const vals = allData
+    .map((d) => d[field] as number | null)
+    .filter((v): v is number => v !== null)
+    .sort((a, b) => a - b);
+  if (vals.length < 7) return null;
+  const n = vals.length;
+  // 6 thresholds at fractional positions 1/7 … 6/7 through the sorted array
+  return [1, 2, 3, 4, 5, 6].map((i) => {
+    const pos = (i / 7) * n;
+    const lo = Math.floor(pos);
+    const hi = Math.min(Math.ceil(pos), n - 1);
+    return (vals[lo] + vals[hi]) / 2;
+  });
+}
+
+// Assign a bin index (0–6) given pre-computed quantile breakpoints.
+export function getBin(value: number, breakpoints: number[]): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
+  for (let i = 0; i < breakpoints.length; i++) {
+    if (value < breakpoints[i]) return i as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  }
   return 6;
 }
 
-export function demoBinColor(value: number | null, min: number, max: number): string {
-  if (value === null) return "#E5E7EB";
-  return DEMO_BINS[getBin(value, min, max)];
+export function demoBinColor(value: number | null, breakpoints: number[] | null): string {
+  if (value === null || !breakpoints) return "#E5E7EB";
+  return DEMO_BINS[getBin(value, breakpoints)];
 }
 
 export function formatDemoValue(field: keyof DemographicsData, value: number | null): string {

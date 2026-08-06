@@ -10,6 +10,7 @@ import {
   demoBinColor,
   formatDemoValue,
   getFieldRange,
+  getQuantileBreakpoints,
 } from "@/lib/demographics";
 
 interface DemographicsPanelProps {
@@ -44,8 +45,8 @@ export function DemographicsPanel({ data, allData, compact = false }: Demographi
       <div className={compact ? "space-y-0.5" : "space-y-1"}>
         {DEMO_NUMERIC_FIELDS.map((field) => {
           const value = data[field] as number | null;
-          const range = getFieldRange(field, allData);
-          const color = range ? demoBinColor(value, range.min, range.max) : "#E5E7EB";
+          const breakpoints = getQuantileBreakpoints(field, allData);
+          const color = demoBinColor(value, breakpoints);
           const isActive = field === activeField;
 
           return (

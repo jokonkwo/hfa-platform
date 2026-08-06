@@ -8,7 +8,7 @@ import type { ZipNow, SearchResult, DemographicsData } from "@/lib/types";
 import { categoryColor, aqiToCategory } from "@/lib/aqi";
 import { ZIP_CENTROIDS } from "@/lib/zipCentroids";
 import type { DemoNumericField } from "@/lib/demographics";
-import { demoBinColor, formatDemoValue, getFieldRange, DEMO_FIELD_LABELS } from "@/lib/demographics";
+import { demoBinColor, formatDemoValue, getFieldRange, getQuantileBreakpoints, DEMO_FIELD_LABELS } from "@/lib/demographics";
 import type { MapTier } from "@/components/TierControl";
 
 const MAPBOX_OUTDOORS_STYLE = "mapbox://styles/mapbox/outdoors-v12";
@@ -116,7 +116,7 @@ function buildZipBoundaryGeoJSON(
   data: ZipNow[],
   activeMetric: "aqi" | DemoNumericField,
   demoByGeoid: Map<string, DemographicsData>,
-  fieldRange: { min: number; max: number } | null,
+  breakpoints: number[] | null,
 ): GeoJSON.FeatureCollection {
   const aqiByZip = new Map(data.map((r) => [r.zip, r]));
   return {
@@ -133,7 +133,7 @@ function buildZipBoundaryGeoJSON(
         } else {
           const demo = demoByGeoid.get(zip);
           const val = demo ? (demo[activeMetric] as number | null) : null;
-          color = fieldRange ? demoBinColor(val, fieldRange.min, fieldRange.max) : "#E5E7EB";
+          color = demoBinColor(val, breakpoints);
           demoLabel = DEMO_FIELD_LABELS[activeMetric] ?? null;
           demoValue = formatDemoValue(activeMetric, val);
         }
@@ -164,7 +164,7 @@ function buildCountyGeoJSON(
   fresnoAvgAqi: number | null,
   activeMetric: "aqi" | DemoNumericField,
   demoByGeoid: Map<string, DemographicsData>,
-  fieldRange: { min: number; max: number } | null,
+  breakpoints: number[] | null,
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
@@ -183,7 +183,7 @@ function buildCountyGeoJSON(
         } else {
           const demo = demoByGeoid.get(geoid);
           const val = demo ? (demo[activeMetric] as number | null) : null;
-          color = fieldRange ? demoBinColor(val, fieldRange.min, fieldRange.max) : "#E5E7EB";
+          color = demoBinColor(val, breakpoints);
           demoLabel = DEMO_FIELD_LABELS[activeMetric] ?? null;
           demoValue = formatDemoValue(activeMetric, val);
         }
@@ -207,7 +207,7 @@ function buildStateGeoJSON(
   fresnoAvgAqi: number | null,
   activeMetric: "aqi" | DemoNumericField,
   demoByGeoid: Map<string, DemographicsData>,
-  fieldRange: { min: number; max: number } | null,
+  breakpoints: number[] | null,
 ): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
@@ -224,7 +224,7 @@ function buildStateGeoJSON(
         } else {
           const demo = demoByGeoid.get(GEOID ?? "");
           const val = demo ? (demo[activeMetric] as number | null) : null;
-          color = fieldRange ? demoBinColor(val, fieldRange.min, fieldRange.max) : "#E5E7EB";
+          color = demoBinColor(val, breakpoints);
           demoLabel = DEMO_FIELD_LABELS[activeMetric] ?? null;
           demoValue = formatDemoValue(activeMetric, val);
         }
@@ -588,9 +588,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (!map || !readyRef.current || !boundariesRef.current) return;
     const metric = activeMetricRef.current;
     const demoByGeoid = new Map(zctaDemographicsRef.current.map((d) => [d.geoid, d]));
-    const fieldRange = metric !== "aqi" ? getFieldRange(metric, zctaDemographicsRef.current) : null;
+    const breakpoints = metric !== "aqi" ? getQuantileBreakpoints(metric, zctaDemographicsRef.current) : null;
     (map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current, metric, demoByGeoid, fieldRange));
+      ?.setData(buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current, metric, demoByGeoid, breakpoints));
     if (dataRef.current.length > 0) {
       type ZipNowWin = Window & typeof globalThis & { __hfaZipNowLoaded?: boolean };
       (window as ZipNowWin).__hfaZipNowLoaded = true;
@@ -604,9 +604,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     if (!map || !readyRef.current || !countyBoundariesRef.current) return;
     const metric = activeMetricRef.current;
     const demoByGeoid = new Map(countyDemographicsRef.current.map((d) => [d.geoid, d]));
-    const fieldRange = metric !== "aqi" ? getFieldRange(metric, countyDemographicsRef.current) : null;
+    const breakpoints = metric !== "aqi" ? getQuantileBreakpoints(metric, countyDemographicsRef.current) : null;
     (map.getSource(COUNTY_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, fieldRange));
+      ?.setData(buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, breakpoints));
     type BoundaryWin = Window & typeof globalThis & { __hfaCountyBoundariesLoaded?: boolean };
     (window as BoundaryWin).__hfaCountyBoundariesLoaded = true;
   };
@@ -617,9 +617,9 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const metric = activeMetricRef.current;
     const stateArr = stateDemographicRef.current; // all 52 states for national range
     const demoByGeoid = new Map(stateArr.map((d) => [d.geoid, d]));
-    const fieldRange = metric !== "aqi" ? getFieldRange(metric, stateArr) : null;
+    const breakpoints = metric !== "aqi" ? getQuantileBreakpoints(metric, stateArr) : null;
     (map.getSource(STATE_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, fieldRange));
+      ?.setData(buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, breakpoints));
     type StateWin = Window & typeof globalThis & { __hfaStateBoundariesLoaded?: boolean };
     (window as StateWin).__hfaStateBoundariesLoaded = true;
   };
