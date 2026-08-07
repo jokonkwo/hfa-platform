@@ -11,7 +11,7 @@ import type { DemoNumericField } from "@/lib/demographics";
 import { demoBinColor, formatDemoValue, getFieldRange, getQuantileBreakpoints, DEMO_FIELD_LABELS } from "@/lib/demographics";
 import type { MapTier } from "@/components/TierControl";
 
-const MAPBOX_LIGHT_STYLE = "mapbox://styles/mapbox/light-v11";
+const MAPBOX_STREETS_STYLE = "mapbox://styles/jokonkwo/cmsiiy10l001201sl6n3z5nz9";
 const US_CENTER: [number, number] = [-96.0, 38.5];
 const US_ZOOM = 3.5;
 const FRESNO_COUNTY_GEOID = "06019";
@@ -657,7 +657,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
       const map = new mapboxgl.Map({
         accessToken: token,
         container,
-        style: MAPBOX_LIGHT_STYLE,
+        style: MAPBOX_STREETS_STYLE,
         center: US_CENTER,
         zoom: US_ZOOM,
         minZoom: 2.5,
