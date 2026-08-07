@@ -758,11 +758,14 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         minZoom: 2.5,
         renderWorldCopies: false,
         projection: "mercator",
-        attributionControl: true,
+        attributionControl: false,
         preserveDrawingBuffer: true,
       });
       mapRef.current = map;
       map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+      // Compact attribution collapses full text to an "i" icon — ToS-compliant,
+      // substantially reduces visual footprint vs. the default inline text.
+      map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-right");
 
       const tooltipEl = document.createElement("div");
       tooltipEl.id = "hfa-hover-tooltip";
