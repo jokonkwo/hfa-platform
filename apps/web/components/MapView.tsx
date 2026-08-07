@@ -345,10 +345,9 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
   // ── State layer: always visible ────────────────────────────────────────
   if (map.getLayer(STATE_FILL)) {
     if (isDemo) {
-      // Demo mode: very translucent fills — target 0.18 primary, 0.32 hover
-      // (measured: rev high-pop ≈ rgb(216,200,192) = ~0.18 effective opacity)
-      const fill  = tier === "state" ? 0.18 : tier === "county" ? 0.07 : 0.04;
-      const hover = tier === "state" ? 0.32 : fill;
+      // Demo mode: calibrated to Reventure ~0.63 opacity (measured from inland blue-county pixels)
+      const fill  = tier === "state" ? 0.65 : tier === "county" ? 0.15 : 0.08;
+      const hover = tier === "state" ? 0.80 : fill;
       map.setPaintProperty(STATE_FILL, "fill-opacity", [
         "case",
         ["boolean", ["feature-state", "hover"], false], hover,
@@ -407,11 +406,11 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     if (countyVisible) {
       if (tier === "county") {
         if (isDemo) {
-          // Demo mode: 0.18 primary / 0.32 hover — measured to match Reventure visual weight
+          // Demo mode: 0.65 primary / 0.80 hover — calibrated to Reventure ~0.63 opacity
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case",
-            ["boolean", ["feature-state", "hover"], false], 0.32,
-            0.18,
+            ["boolean", ["feature-state", "hover"], false], 0.80,
+            0.65,
           ] as unknown as number);
           map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
             "case",
@@ -442,10 +441,10 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
           "#111111",
         ] as unknown as string);
       } else {
-        // zip tier — county is secondary context
+        // zip tier — county is secondary context (subdued behind ZIP fills)
         if (isDemo) {
-          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.04);
-          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.18);
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.10);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.30);
         } else {
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case", ["==", ["get", "hasData"], 1], 0.10, 0.04,
@@ -477,11 +476,11 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     map.setLayoutProperty(ZIP_BOUNDARY_OUTLINE, "visibility", zipVisible ? "visible" : "none");
     if (zipVisible) {
       if (isDemo) {
-        // Demo mode: 0.18 primary / 0.32 hover — matches measured Reventure opacity
+        // Demo mode: 0.65 primary / 0.80 hover — calibrated to Reventure ~0.63 opacity
         map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.32,
-          0.18,
+          ["boolean", ["feature-state", "hover"], false], 0.80,
+          0.65,
         ] as unknown as number);
         map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
           "case",

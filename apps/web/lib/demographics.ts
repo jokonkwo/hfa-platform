@@ -1,17 +1,19 @@
 import type { DemographicsData } from "./types";
 
-// Lighter, more muted versions of the blue→red diverging scheme.
-// At the target fill-opacity of 0.18 these render as near-neutral tints
-// (R/G/B spread ≤ 20pt) over the Streets basemap — matching Reventure's
-// measured visual weight (sampled: rev high-pop ≈ rgb(216,200,192)).
+// 7-bin palette interpolated from Reventure's confirmed 5-bin legend colors:
+//   bin0=rgb(0,0,255), bin1=rgb(147,151,250), bin2=rgb(255,222,215),
+//   bin3=rgb(255,129,116), bin4=rgb(255,0,0)
+// Linear interpolation at 0, 1/6, 2/6, 3/6, 4/6, 5/6, 1 across the 5-stop gradient.
+// Fill-opacity is set in MapView.tsx (0.65 active, 0.80 hover) — calibrated to
+// match Reventure's measured ~0.63 opacity from inland blue-county pixel samples.
 export const DEMO_BINS = [
-  "#6B9EC8",  // bin 0 lowest — muted steel blue
-  "#92B8D8",  // bin 1
-  "#BACCDF",  // bin 2 — pale blue-gray
-  "#E8E7E4",  // bin 3 — warm neutral
-  "#EECEC4",  // bin 4 — light peach
-  "#D8A0A0",  // bin 5 — soft rose
-  "#C87878",  // bin 6 highest — muted rose
+  "#0000FF",  // bin 0 lowest — pure blue
+  "#6265FC",  // bin 1 — interpolated
+  "#B7AFEE",  // bin 2 — interpolated
+  "#FFDED7",  // bin 3 — neutral pink (Reventure legend exact)
+  "#FFA095",  // bin 4 — interpolated
+  "#FF564D",  // bin 5 — interpolated
+  "#FF0000",  // bin 6 highest — pure red
 ] as const;
 
 // Compute 6 quantile breakpoints that divide `allData` into 7 equal-count bins.
