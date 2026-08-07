@@ -661,6 +661,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         center: US_CENTER,
         zoom: US_ZOOM,
         minZoom: 2.5,
+        renderWorldCopies: false,
         projection: "mercator",
         attributionControl: true,
         preserveDrawingBuffer: true,
