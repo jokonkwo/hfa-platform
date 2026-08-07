@@ -196,6 +196,7 @@ export default function Home() {
 
   const handleCountySelect = useCallback((geoid: string, _name: string) => {
     setSelectedCountyGeoid(geoid);
+    setSelectedStateGeoid(geoid.slice(0, 2));
     mapRef.current?.fitToGeoid("county", geoid);
   }, []);
 
