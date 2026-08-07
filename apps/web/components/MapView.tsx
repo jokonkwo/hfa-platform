@@ -345,9 +345,10 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
   // ── State layer: always visible ────────────────────────────────────────
   if (map.getLayer(STATE_FILL)) {
     if (isDemo) {
-      // Demo mode: translucent fills so basemap labels/terrain show through (Reventure-style)
-      const fill  = tier === "state" ? 0.40 : tier === "county" ? 0.14 : 0.09;
-      const hover = tier === "state" ? 0.60 : fill;
+      // Demo mode: very translucent fills — target 0.18 primary, 0.32 hover
+      // (measured: rev high-pop ≈ rgb(216,200,192) = ~0.18 effective opacity)
+      const fill  = tier === "state" ? 0.18 : tier === "county" ? 0.07 : 0.04;
+      const hover = tier === "state" ? 0.32 : fill;
       map.setPaintProperty(STATE_FILL, "fill-opacity", [
         "case",
         ["boolean", ["feature-state", "hover"], false], hover,
@@ -406,16 +407,16 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     if (countyVisible) {
       if (tier === "county") {
         if (isDemo) {
-          // Demo mode: translucent fills so basemap labels show through (Reventure-style)
+          // Demo mode: 0.18 primary / 0.32 hover — measured to match Reventure visual weight
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case",
-            ["boolean", ["feature-state", "hover"], false], 0.60,
-            0.40,
+            ["boolean", ["feature-state", "hover"], false], 0.32,
+            0.18,
           ] as unknown as number);
           map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
             "case",
             ["boolean", ["feature-state", "hover"], false], 1.0,
-            0.65,
+            0.50,
           ] as unknown as number);
         } else {
           // AQI mode: only Fresno county sensors have data
@@ -443,8 +444,8 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
       } else {
         // zip tier — county is secondary context
         if (isDemo) {
-          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.08);
-          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.25);
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.04);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.18);
         } else {
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case", ["==", ["get", "hasData"], 1], 0.10, 0.04,
@@ -476,17 +477,16 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     map.setLayoutProperty(ZIP_BOUNDARY_OUTLINE, "visibility", zipVisible ? "visible" : "none");
     if (zipVisible) {
       if (isDemo) {
-        // Demo mode: translucent fills so basemap roads/terrain show through (Reventure-style)
-        // (ignoring AQI hasData so rural ZIPs aren't dimmed vs pilot ZIPs)
+        // Demo mode: 0.18 primary / 0.32 hover — matches measured Reventure opacity
         map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.60,
-          0.40,
+          ["boolean", ["feature-state", "hover"], false], 0.32,
+          0.18,
         ] as unknown as number);
         map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
           "case",
           ["boolean", ["feature-state", "hover"], false], 1.0,
-          0.70,
+          0.50,
         ] as unknown as number);
       } else {
         // AQI mode: dim ZIPs that have no sensor data

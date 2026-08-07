@@ -1,13 +1,17 @@
 import type { DemographicsData } from "./types";
 
+// Lighter, more muted versions of the blue→red diverging scheme.
+// At the target fill-opacity of 0.18 these render as near-neutral tints
+// (R/G/B spread ≤ 20pt) over the Streets basemap — matching Reventure's
+// measured visual weight (sampled: rev high-pop ≈ rgb(216,200,192)).
 export const DEMO_BINS = [
-  "#1D4ED8",
-  "#3B82F6",
-  "#93C5FD",
-  "#E5E7EB",
-  "#FCA5A5",
-  "#EF4444",
-  "#B91C1C",
+  "#6B9EC8",  // bin 0 lowest — muted steel blue
+  "#92B8D8",  // bin 1
+  "#BACCDF",  // bin 2 — pale blue-gray
+  "#E8E7E4",  // bin 3 — warm neutral
+  "#EECEC4",  // bin 4 — light peach
+  "#D8A0A0",  // bin 5 — soft rose
+  "#C87878",  // bin 6 highest — muted rose
 ] as const;
 
 // Compute 6 quantile breakpoints that divide `allData` into 7 equal-count bins.
