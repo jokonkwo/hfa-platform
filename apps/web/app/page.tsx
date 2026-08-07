@@ -209,48 +209,6 @@ export default function Home() {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="relative z-40 flex h-14 flex-shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4">
-        <SearchBar onSelect={handleSearchSelect} />
-
-        <div className="h-7 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
-
-        <TierControl tier={tier} onChange={handleTierChange} />
-
-        <button
-          onClick={handleShare}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-50"
-          aria-label="Share"
-          title="Copy link"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-            <circle cx="18" cy="5" r="3" />
-            <circle cx="6" cy="12" r="3" />
-            <circle cx="18" cy="19" r="3" />
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-          </svg>
-        </button>
-
-        <button
-          onClick={() => { setFilterOpen((o) => !o); setAboutOpen(false); }}
-          className="flex flex-shrink-0 items-center gap-1.5 rounded border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M10 12h4" />
-          </svg>
-          Filter
-        </button>
-
-        <button
-          onClick={() => { setAboutOpen(true); setFilterOpen(false); }}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white hover:bg-teal-600"
-          aria-label="About"
-          title="About Healthy Fresno Air"
-        >
-          HF
-        </button>
-      </header>
-
       <div className="relative flex flex-1 overflow-hidden">
         <aside
           className={`absolute inset-y-0 left-0 z-30 w-[280px] flex-shrink-0 border-r border-gray-200 bg-white transition-transform duration-300 md:static md:translate-x-0 ${
@@ -288,6 +246,49 @@ export default function Home() {
             onCountySelect={handleCountySelect}
             onBoundsChange={setMapBounds}
           />
+
+          {/* Floating search/tier toolbar — hovers over map, matches Reventure pattern */}
+          <div className="pointer-events-auto absolute left-3 top-3 z-40">
+            <div className="flex items-center gap-2 rounded-2xl bg-white/95 px-3 py-2 shadow-lg ring-1 ring-black/5 backdrop-blur-sm">
+              <div className="w-56">
+                <SearchBar onSelect={handleSearchSelect} />
+              </div>
+              <div className="h-5 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
+              <TierControl tier={tier} onChange={handleTierChange} />
+              <div className="h-5 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
+              <button
+                onClick={handleShare}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+                aria-label="Share"
+                title="Copy link"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+              </button>
+              <button
+                onClick={() => { setFilterOpen((o) => !o); setAboutOpen(false); }}
+                className="flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M10 12h4" />
+                </svg>
+                Filter
+              </button>
+              <button
+                onClick={() => { setAboutOpen(true); setFilterOpen(false); }}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-teal-500 text-sm font-bold text-white hover:bg-teal-600"
+                aria-label="About"
+                title="About Healthy Fresno Air"
+              >
+                HF
+              </button>
+            </div>
+          </div>
 
           {state === "loading" && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70">
