@@ -23,7 +23,7 @@ A map-first air quality intelligence platform for Fresno County, in the pattern 
 | Transforms | **dbt** for warehouse models, but with the deployed flat naming as the target | The deployed pipeline used direct Python writes for the bronze tables (discovery output) and uncommitted SQL for silver/gold. The plan is to express the full transform chain in dbt, using the deployed table names as the target schema. The existing `warehouse/dbt/` models are a starting point but need to be aligned to the deployed naming and extended. |
 | Geospatial | DuckDB spatial extension (`ST_Contains`, `ST_Point`, `ST_Centroid`) | Working in `dim_sensors.sql` and `dim_zip_county.sql`. Known long-term limitation: no native spatial index yet — not a binding constraint at Fresno-county scale. |
 | Map geometry | **MotherDuck `raw_us_*` tables, queried at request time** | Static `fresno_zip_boundaries.geojson` (18 ZIPs) and `ca_county_boundaries.geojson` (58 counties) were removed 2026-07-30. Census TIGER 2025 shapefiles are now stored in HFA_DEV as `raw_us_states` (56 rows), `raw_us_counties` (3,235 rows), and `raw_us_zctas` (33,791 rows). Boundary endpoints query at request time using DuckDB spatial: counties use `WHERE state_fp = ?` (default '06'); ZIPs use `ST_Within(ST_Centroid(geom), county_geom)` (default Fresno County GEOID '06019', returns 55 ZIPs — all 18 pilot ZIPs plus 37 rural Fresno County ZIPs). Optional query params: `?state=` for counties, `?county=` for ZIPs. Source .zip files are local only (not in repo): `~/Downloads/tl_2025_us_*.zip`. **PMTiles (Tippecanoe → Cloudflare R2 → MapLibre) remains the plan if coverage expands significantly** — the MotherDuck approach is sufficient for California-scale, single-scope queries at low volume. |
-| Basemap | **Mapbox Outdoors v12** (`mapbox://styles/mapbox/outdoors-v12`) | Replaced CARTO Positron. Requires `NEXT_PUBLIC_MAPBOX_TOKEN` env var (stored in `.env`). Rich earthy terrain aesthetic with neighborhood labels at zoom 12. |
+| Basemap | **Mapbox Light v11** (`mapbox://styles/mapbox/light-v11`) | Replaced Outdoors v12 (2026-08-06). Network inspection of Reventure.app confirmed their style (`gabriel416/clbt2ugok000514qtaam2tola`) uses the DIN Pro font family — which is the Streets/Light family, not Outdoors. Light v11 is the closest available public Mapbox style. Requires `NEXT_PUBLIC_MAPBOX_TOKEN` env var (stored in `.env`). |
 | Web | Next.js + Mapbox GL JS | `apps/web` exists and is running. Map has Mapbox Outdoors v12 basemap, GeoJSON fill layer for ZIP boundaries colored by AQI, county drill-down layer (CA-wide at zoom 5, Fresno-focused at zoom 12 via County/ZIP tier toggle in header), sidebar, filter, detail panel, About panel. |
 | Mobile | Expo + React Native | Not yet implemented — `apps/mobile` doesn't exist. |
 | Scheduling | **Paused** — pipeline proven, ingestion deliberately off | `on.schedule` removed from both workflows (2026-07-25). cron-job.org is configured and was firing every 10 min, but ingestion is paused while PurpleAir API point budget is confirmed sustainable. Both workflows are `workflow_dispatch`-only; manual runs work via the Actions tab or `gh workflow run`. To resume: re-enable the cron-job.org jobs. See `docs/scheduling.md`. |
@@ -200,7 +200,23 @@ Good `#8FE3A8` · Moderate `#FCE083` · USG `#F5B375` · Unhealthy `#EF8C8C` · 
 
 ---
 
-## 9. Subagents (start with these two, add more as needed)
+## 9. Demographics color-binning — confirmed approach (do not silently revisit)
+
+**Decision:** Keep the 7-bin uniform quantile approach for all demographic metrics (Population, Median HH Income, etc.) with breakpoints computed nationally from all available rows (3,222 counties, 52 states, 1,802 ZCTAs).
+
+**The tier mismatch vs. Reventure on specific counties (Kings County, Imperial County, Humboldt County, etc.) is understood and is NOT a bug.** Two confirmed explanations:
+
+1. **Different population source:** Prior to 2026-08-06, our Population was ACS 5-Year 2024 while Reventure uses PEP annual estimates — this has since been corrected (state/county Population is now PEP Vintage 2024, matching Reventure's values for Fresno County exactly). The remaining tier mismatches on specific counties are likely explained by #2 below.
+
+2. **Different binning method or bin count:** Our 7-bin uniform quantile assigns equal numbers of counties per bin. Reventure likely uses a different approach — Jenks natural breaks, equal-interval, or a 5-bin quintile scheme — which produces different bin boundaries at absolute value thresholds. This is a visual design choice, not a data accuracy issue.
+
+**Do not switch to Jenks or 5-bin** without a deliberate product decision that the current bin-per-county distribution behavior is a problem. The current breakpoints (for county Population: ~6,675 / 12,737 / 20,642 / 33,584 / 57,901 / 148,002) correctly place each tier at equal county counts nationally.
+
+**Implemented in:** `apps/web/lib/demographics.ts` — `getQuantileBreakpoints()` (6 thresholds at 1/7…6/7 positions), `getBin()` (strict `<` comparison, standard quantile behavior).
+
+---
+
+## 10. Subagents (start with these two, add more as needed)
 
 - `api-contract-agent` — owns `apps/api/`, keeps endpoints in sync with `docs/data_contract.md` and the `api_*` view shapes in HFA_DEV.
 - `qa-review-agent` — read-only, reviews diffs against the spec, data contract, and deployed schema before merge.
