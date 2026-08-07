@@ -33,6 +33,12 @@ const STATE_OUTLINE = "state-boundary-outline";
 const STATE_LABELS = "state-labels";
 const COUNTY_LABELS = "county-labels";
 const ZIP_LABELS = "zip-labels";
+// Dedicated point sources for labels — one Point per region, placed at
+// the centroid of the largest polygon component so MultiPolygon counties
+// (e.g. LA County with Catalina, RI with bay islands) label the mainland.
+const STATE_LABEL_PTS  = "state-label-pts";
+const COUNTY_LABEL_PTS = "county-label-pts";
+const ZIP_LABEL_PTS    = "zip-label-pts";
 
 // ── Exported types ─────────────────────────────────────────────────────────
 
@@ -83,6 +89,33 @@ function geomBbox(
     geom.coordinates.forEach((polygon) => polygon.forEach(processRing));
   }
   return [[minLng, minLat], [maxLng, maxLat]];
+}
+
+// Returns the centroid of the largest outer ring in a Polygon / MultiPolygon,
+// using bounding-box area as a fast proxy for ring area. This keeps labels on
+// the main landmass for coastal counties / island states rather than letting
+// Mapbox compute the centroid of the full MultiPolygon (which can fall in water).
+function largestPolyCenter(
+  geom: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+): [number, number] {
+  const rings: GeoJSON.Position[][] =
+    geom.type === "Polygon"
+      ? [geom.coordinates[0]]
+      : geom.coordinates.map((poly) => poly[0]);
+  let bestRing = rings[0];
+  let bestArea = -Infinity;
+  for (const ring of rings) {
+    let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    for (const [lng, lat] of ring) {
+      if (lng < minLng) minLng = lng; if (lng > maxLng) maxLng = lng;
+      if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+    }
+    const area = (maxLng - minLng) * (maxLat - minLat);
+    if (area > bestArea) { bestArea = area; bestRing = ring; }
+  }
+  let sumLng = 0, sumLat = 0;
+  for (const [lng, lat] of bestRing) { sumLng += lng; sumLat += lat; }
+  return [sumLng / bestRing.length, sumLat / bestRing.length];
 }
 
 // ── GeoJSON builders ───────────────────────────────────────────────────────
@@ -241,6 +274,62 @@ function buildStateGeoJSON(
         };
       },
     ),
+  };
+}
+
+// ── Label-point GeoJSON builders ──────────────────────────────────────────
+// Each returns one Point feature per region, placed at the largest-polygon
+// centroid. Properties are copied from the corresponding fill feature so the
+// label layer can read labelName / labelValue directly.
+
+function buildCountyLabelPoints(
+  fills: GeoJSON.FeatureCollection,
+  boundaries: CountyBoundaryCollection,
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: boundaries.features.map((boundary, i) => {
+      const [lon, lat] = largestPolyCenter(boundary.geometry);
+      return {
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [lon, lat] },
+        properties: fills.features[i]?.properties ?? {},
+      };
+    }),
+  };
+}
+
+function buildStateLabelPoints(
+  fills: GeoJSON.FeatureCollection,
+  boundaries: StateBoundaryCollection,
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: boundaries.features.map((boundary, i) => {
+      const [lon, lat] = largestPolyCenter(boundary.geometry);
+      return {
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [lon, lat] },
+        properties: fills.features[i]?.properties ?? {},
+      };
+    }),
+  };
+}
+
+function buildZipLabelPoints(
+  fills: GeoJSON.FeatureCollection,
+  boundaries: BoundaryCollection,
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: boundaries.features.map((boundary, i) => {
+      const [lon, lat] = largestPolyCenter(boundary.geometry);
+      return {
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [lon, lat] },
+        properties: fills.features[i]?.properties ?? {},
+      };
+    }),
   };
 }
 
@@ -605,8 +694,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const metric = activeMetricRef.current;
     const demoByGeoid = new Map(zctaDemographicsRef.current.map((d) => [d.geoid, d]));
     const breakpoints = metric !== "aqi" ? getQuantileBreakpoints(metric, zctaDemographicsRef.current) : null;
-    (map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current, metric, demoByGeoid, breakpoints));
+    const fills = buildZipBoundaryGeoJSON(boundariesRef.current, dataRef.current, metric, demoByGeoid, breakpoints);
+    (map.getSource(ZIP_BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource)?.setData(fills);
+    (map.getSource(ZIP_LABEL_PTS) as mapboxgl.GeoJSONSource)
+      ?.setData(buildZipLabelPoints(fills, boundariesRef.current));
     if (dataRef.current.length > 0) {
       type ZipNowWin = Window & typeof globalThis & { __hfaZipNowLoaded?: boolean };
       (window as ZipNowWin).__hfaZipNowLoaded = true;
@@ -621,8 +712,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const metric = activeMetricRef.current;
     const demoByGeoid = new Map(countyDemographicsRef.current.map((d) => [d.geoid, d]));
     const breakpoints = metric !== "aqi" ? getQuantileBreakpoints(metric, countyDemographicsRef.current) : null;
-    (map.getSource(COUNTY_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, breakpoints));
+    const fills = buildCountyGeoJSON(countyBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, breakpoints);
+    (map.getSource(COUNTY_SOURCE) as mapboxgl.GeoJSONSource)?.setData(fills);
+    (map.getSource(COUNTY_LABEL_PTS) as mapboxgl.GeoJSONSource)
+      ?.setData(buildCountyLabelPoints(fills, countyBoundariesRef.current));
     type BoundaryWin = Window & typeof globalThis & { __hfaCountyBoundariesLoaded?: boolean };
     (window as BoundaryWin).__hfaCountyBoundariesLoaded = true;
   };
@@ -634,8 +727,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
     const stateArr = stateDemographicRef.current; // all 52 states for national range
     const demoByGeoid = new Map(stateArr.map((d) => [d.geoid, d]));
     const breakpoints = metric !== "aqi" ? getQuantileBreakpoints(metric, stateArr) : null;
-    (map.getSource(STATE_SOURCE) as mapboxgl.GeoJSONSource)
-      ?.setData(buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, breakpoints));
+    const fills = buildStateGeoJSON(stateBoundariesRef.current, fresnoAvgAqiRef.current, metric, demoByGeoid, breakpoints);
+    (map.getSource(STATE_SOURCE) as mapboxgl.GeoJSONSource)?.setData(fills);
+    (map.getSource(STATE_LABEL_PTS) as mapboxgl.GeoJSONSource)
+      ?.setData(buildStateLabelPoints(fills, stateBoundariesRef.current));
     type StateWin = Window & typeof globalThis & { __hfaStateBoundariesLoaded?: boolean };
     (window as StateWin).__hfaStateBoundariesLoaded = true;
   };
@@ -685,6 +780,11 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         map.addSource(COUNTY_SOURCE, { type: "geojson", data: EMPTY_FC, generateId: true });
         map.addSource(ZIP_BOUNDARY_SOURCE, { type: "geojson", data: EMPTY_FC, generateId: true });
         map.addSource(ZIP_CIRCLE_SOURCE, { type: "geojson", data: buildPointGeoJSON([]) });
+        // Point sources for labels — separate from the polygon fill sources so
+        // we control placement (largest-polygon centroid, not Mapbox's auto).
+        map.addSource(STATE_LABEL_PTS,  { type: "geojson", data: EMPTY_FC });
+        map.addSource(COUNTY_LABEL_PTS, { type: "geojson", data: EMPTY_FC });
+        map.addSource(ZIP_LABEL_PTS,    { type: "geojson", data: EMPTY_FC });
 
         // ── Add layers bottom → top (z-order is fixed from the start) ──
         map.addLayer({ id: STATE_FILL, type: "fill", source: STATE_SOURCE,
@@ -740,19 +840,23 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
           "text-halo-width": 1.8,
         };
 
+        // Labels use dedicated Point sources (largestPolyCenter placement).
+        // minzoom thresholds: state=5 (individual states readable), county=9
+        // (sub-state region visible — absent in Bay Area / CA-wide views),
+        // zip=11 (secondary streets visible in the Streets basemap).
         map.addLayer({
-          id: STATE_LABELS, type: "symbol", source: STATE_SOURCE, minzoom: 4,
-          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 4, 9, 7, 12] as unknown as number },
+          id: STATE_LABELS, type: "symbol", source: STATE_LABEL_PTS, minzoom: 5,
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 5, 9, 8, 12] as unknown as number },
           paint: labelPaint,
         });
         map.addLayer({
-          id: COUNTY_LABELS, type: "symbol", source: COUNTY_SOURCE, minzoom: 5.5,
-          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 5.5, 9, 9, 12] as unknown as number },
+          id: COUNTY_LABELS, type: "symbol", source: COUNTY_LABEL_PTS, minzoom: 9,
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 9, 12, 13] as unknown as number },
           paint: labelPaint,
         });
         map.addLayer({
-          id: ZIP_LABELS, type: "symbol", source: ZIP_BOUNDARY_SOURCE, minzoom: 9,
-          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 9, 12, 12] as unknown as number },
+          id: ZIP_LABELS, type: "symbol", source: ZIP_LABEL_PTS, minzoom: 11,
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 11, 9, 13, 12] as unknown as number },
           paint: labelPaint,
         });
 
