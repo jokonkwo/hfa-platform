@@ -345,9 +345,9 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
   // ── State layer: always visible ────────────────────────────────────────
   if (map.getLayer(STATE_FILL)) {
     if (isDemo) {
-      // Demo mode: calibrated to Reventure ~0.63 opacity (measured from inland blue-county pixels)
-      const fill  = tier === "state" ? 0.65 : tier === "county" ? 0.15 : 0.08;
-      const hover = tier === "state" ? 0.80 : fill;
+      // Demo mode: ~0.40 opacity matches Reventure's muted choropleth (back-calc from pixel samples)
+      const fill  = tier === "state" ? 0.40 : tier === "county" ? 0.10 : 0.06;
+      const hover = tier === "state" ? 0.60 : fill;
       map.setPaintProperty(STATE_FILL, "fill-opacity", [
         "case",
         ["boolean", ["feature-state", "hover"], false], hover,
@@ -406,11 +406,11 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     if (countyVisible) {
       if (tier === "county") {
         if (isDemo) {
-          // Demo mode: 0.65 primary / 0.80 hover — calibrated to Reventure ~0.63 opacity
+          // Demo mode: 0.40 primary / 0.60 hover — matches Reventure muted choropleth
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case",
-            ["boolean", ["feature-state", "hover"], false], 0.80,
-            0.65,
+            ["boolean", ["feature-state", "hover"], false], 0.60,
+            0.40,
           ] as unknown as number);
           map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", [
             "case",
@@ -443,8 +443,8 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
       } else {
         // zip tier — county is secondary context (subdued behind ZIP fills)
         if (isDemo) {
-          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.10);
-          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.30);
+          map.setPaintProperty(COUNTY_FILL, "fill-opacity", 0.06);
+          map.setPaintProperty(COUNTY_OUTLINE, "line-opacity", 0.20);
         } else {
           map.setPaintProperty(COUNTY_FILL, "fill-opacity", [
             "case", ["==", ["get", "hasData"], 1], 0.10, 0.04,
@@ -476,11 +476,11 @@ function applyTierStyling(map: mapboxgl.Map, tier: MapTier, metric: "aqi" | Demo
     map.setLayoutProperty(ZIP_BOUNDARY_OUTLINE, "visibility", zipVisible ? "visible" : "none");
     if (zipVisible) {
       if (isDemo) {
-        // Demo mode: 0.65 primary / 0.80 hover — calibrated to Reventure ~0.63 opacity
+        // Demo mode: 0.40 primary / 0.60 hover — matches Reventure muted choropleth
         map.setPaintProperty(ZIP_BOUNDARY_FILL, "fill-opacity", [
           "case",
-          ["boolean", ["feature-state", "hover"], false], 0.80,
-          0.65,
+          ["boolean", ["feature-state", "hover"], false], 0.60,
+          0.40,
         ] as unknown as number);
         map.setPaintProperty(ZIP_BOUNDARY_OUTLINE, "line-opacity", [
           "case",
