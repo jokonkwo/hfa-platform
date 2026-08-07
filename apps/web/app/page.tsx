@@ -248,7 +248,7 @@ export default function Home() {
           />
 
           {/* Floating search/tier toolbar — hovers over map, matches Reventure pattern */}
-          <div className="pointer-events-auto absolute left-3 top-3 z-40">
+          <div className="pointer-events-auto absolute left-4 top-4 z-40">
             <div className="flex items-center gap-2 rounded-2xl bg-white/95 px-3 py-2 shadow-lg ring-1 ring-black/5 backdrop-blur-sm">
               <div className="w-56">
                 <SearchBar onSelect={handleSearchSelect} />

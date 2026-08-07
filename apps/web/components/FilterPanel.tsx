@@ -23,7 +23,7 @@ export function FilterPanel({
   if (!open) return null;
 
   return (
-    <div className="absolute left-1/2 top-14 z-30 w-full max-w-md -translate-x-1/2 rounded-b-lg border border-gray-200 bg-white p-5 shadow-xl">
+    <div className="absolute left-4 top-20 z-30 w-80 rounded-xl border border-gray-200 bg-white p-5 shadow-xl">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-gray-800">Filter by AQI</h3>
         <button
