@@ -1,19 +1,18 @@
 import type { DemographicsData } from "./types";
 
-// 7-bin palette interpolated from Reventure's confirmed 5-bin legend colors:
-//   bin0=rgb(0,0,255), bin1=rgb(147,151,250), bin2=rgb(255,222,215),
-//   bin3=rgb(255,129,116), bin4=rgb(255,0,0)
-// Linear interpolation at 0, 1/6, 2/6, 3/6, 4/6, 5/6, 1 across the 5-stop gradient.
-// Fill-opacity is set in MapView.tsx (0.65 active, 0.80 hover) — calibrated to
-// match Reventure's measured ~0.63 opacity from inland blue-county pixel samples.
+// 7-bin palette matching Reventure's choropleth:
+//   Bins 0–2: blue family; Bin 3: fully transparent (middle counties look like basemap);
+//   Bins 4–6: red family. Opacity set in MapView.tsx at 0.40 active / 0.60 hover.
+//   Verified: Lassen County (31K) and Glenn County (29K) both fall in bin 3
+//   and render as basemap in Reventure — rgba(0,0,0,0) replicates this exactly.
 export const DEMO_BINS = [
-  "#0000FF",  // bin 0 lowest — pure blue
-  "#6265FC",  // bin 1 — interpolated
-  "#B7AFEE",  // bin 2 — interpolated
-  "#FFDED7",  // bin 3 — neutral pink (Reventure legend exact)
-  "#FFA095",  // bin 4 — interpolated
-  "#FF564D",  // bin 5 — interpolated
-  "#FF0000",  // bin 6 highest — pure red
+  "#0000FF",        // bin 0 lowest — pure blue
+  "#6265FC",        // bin 1 — medium blue
+  "#B7AFEE",        // bin 2 — light blue-purple
+  "rgba(0,0,0,0)",  // bin 3 — transparent (middle: same as basemap)
+  "#FFA095",        // bin 4 — light red
+  "#FF564D",        // bin 5 — medium red
+  "#FF0000",        // bin 6 highest — pure red
 ] as const;
 
 // Compute 6 quantile breakpoints that divide `allData` into 7 equal-count bins.
