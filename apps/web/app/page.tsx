@@ -247,10 +247,10 @@ export default function Home() {
             onBoundsChange={setMapBounds}
           />
 
-          {/* Floating search/tier toolbar — hovers over map, matches Reventure pattern */}
-          <div className="pointer-events-auto absolute left-4 top-4 z-40">
+          {/* Floating search/tier toolbar — right-aligned, hovers over map, matches Reventure pattern */}
+          <div className="pointer-events-auto absolute right-4 top-4 z-40">
             <div className="flex items-center gap-2 rounded-2xl bg-white/95 px-3 py-2 shadow-lg ring-1 ring-black/5 backdrop-blur-sm">
-              <div className="w-56">
+              <div className="w-64">
                 <SearchBar onSelect={handleSearchSelect} />
               </div>
               <div className="h-5 w-px flex-shrink-0 bg-gray-200" aria-hidden="true" />
