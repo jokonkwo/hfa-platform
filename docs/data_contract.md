@@ -411,9 +411,13 @@ Array ordered by `date DESC`. May be empty if no daily data exists for that ZIP.
 
 **aqi_exceed_* type quirk:** These BIGINT columns arrive as float64 through pandas (values like `0.0`). Not used in the UI.
 
-### `GET /v1/demographics/states` — ACS state-level demographics
+### `GET /v1/demographics/states` — state-level demographics
 
-Returns a JSON array of all 52 US states/territories (ACS 2024 5-Year). Used by the frontend to compute the **national** color-scale range so CA's position is placed in true national context. No query params. Registered under `apps/api/src/hfa_api/routes/demographics.py`.
+Returns a JSON array of all 52 US states/territories. Used by the frontend to compute the **national** color-scale range. No query params. Registered under `apps/api/src/hfa_api/routes/demographics.py`.
+
+**Data source by field:**
+- `population`, `pop_growth_pct`, `pop_density_per_sq_mi`: Census PEP Vintage 2024 (July 1, 2024 annual estimates). PR (FP=72) falls back to ACS 5-Year (PEP doesn't publish PR data).
+- All other fields: ACS 5-Year Data Profile 2024.
 
 Each object also includes `state_fp` (same as `geoid` for states).
 
@@ -424,7 +428,7 @@ Each object also includes `state_fp` (same as `geoid` for states).
     "name": "California",
     "geography_level": "state",
     "state_fp": "06",
-    "population": 39287377,
+    "population": 39431263,
     "median_hh_income": 99122.0,
     "median_age": 38.2,
     "poverty_rate_pct": 11.5,
@@ -432,18 +436,22 @@ Each object also includes `state_fp` (same as `geoid` for states).
     "unemployment_rate_pct": 4.4,
     "limited_english_pct": 17.5,
     "housing_cost_burden_pct": 55.31,
-    "pop_density_per_sq_mi": 239.32,
-    "pop_growth_pct": -0.47,
+    "pop_density_per_sq_mi": 240,
+    "pop_growth_pct": 0.593,
     "income_growth_pct": 5.12
   }
 ]
 ```
 
-**National income range (states, 2024 ACS):** $26,297 (PR) → $109,870 (MD).
+**National income range (states, 2024 ACS):** $26,297 (PR) → $109,870 (DC).
 
-### `GET /v1/demographics/counties` — ACS county-level demographics
+### `GET /v1/demographics/counties` — county-level demographics
 
 **Query params:** `?state_fp=<fips>` (optional). When omitted, returns all ~3,222 US counties for national color-scale computation. When provided (e.g. `?state_fp=06`), returns only that state's counties.
+
+**Data source by field:**
+- `population`, `pop_growth_pct`, `pop_density_per_sq_mi`: Census PEP Vintage 2024 (July 1, 2024 annual estimates) for all 50 states + DC (3,144 counties). Puerto Rico municipalities fall back to ACS 5-Year.
+- All other fields: ACS 5-Year Data Profile 2024.
 
 ```json
 [
@@ -451,7 +459,7 @@ Each object also includes `state_fp` (same as `geoid` for states).
     "geoid": "06019",
     "name": "Fresno County",
     "geography_level": "county",
-    "population": 1016725,
+    "population": 1024125,
     "median_hh_income": 74201.0,
     "median_age": 31.8,
     "poverty_rate_pct": 18.3,
@@ -459,16 +467,18 @@ Each object also includes `state_fp` (same as `geoid` for states).
     "unemployment_rate_pct": 8.7,
     "limited_english_pct": 17.7,
     "housing_cost_burden_pct": 57.2,
-    "pop_density_per_sq_mi": 168.81,
-    "pop_growth_pct": 0.3,
+    "pop_density_per_sq_mi": 170,
+    "pop_growth_pct": 0.414,
     "income_growth_pct": 5.0
   }
 ]
 ```
 
-### `GET /v1/demographics/zctas` — ACS ZCTA-level demographics (batch)
+### `GET /v1/demographics/zctas` — ZCTA-level demographics (batch)
 
 **Query params:** `?geoids=93701,93702,...` (comma-separated ZCTA geoids, max 200). Returns demographics for each requested ZCTA found in `raw_acs_demographics`. Missing geoids are silently omitted.
+
+**Data source:** All fields including `population` are ACS 5-Year 2024. Census PEP does not publish ZCTA-level estimates, so ZIP-tier Population is ~2 years less current than county/state Population.
 
 ```json
 [
@@ -516,30 +526,30 @@ Single object. Returns 404 if no discovery data available for today.
 ## Demographics Table (annual refresh)
 
 ### `raw_acs_demographics`
-**Source:** US Census Bureau ACS 5-Year Data Profiles (`/data/{vintage}/acs/acs5/profile`)  
+**Sources:** Mixed — see tier-specific notes below  
 **Loaded by:** `pipelines/ingestion/acs/load_acs_demographics.py`  
 **Rows:** 5,076 rows for vintage 2024 (52 states/territories, 3,222 counties nationally, 1,802 CA ZCTAs covering ZIP prefix 900–961)  
 **Grain:** (vintage, geography_level, geoid)  
-**Refresh cadence:** Annual (run manually once per ACS release cycle)
+**Refresh cadence:** Annual (run manually once per ACS and PEP release cycle). Last run 2026-08-06.
 
-| Column | Type | Notes |
-|---|---|---|
-| `vintage` | INTEGER | ACS release year (e.g. 2024) |
-| `geography_level` | VARCHAR | `"state"`, `"county"`, or `"zcta"` |
-| `geoid` | VARCHAR | 2-digit state FIPS (`"06"`), 5-digit county FIPS (`"06019"`), or 5-digit ZCTA (`"93701"`) |
-| `name` | VARCHAR | Human-readable name (e.g. `"California"`, `"Fresno County"`) |
-| `state_fp` | VARCHAR | 2-digit state FIPS for all levels |
-| `population` | BIGINT | ACS DP05_0001E — total population |
-| `median_hh_income` | DOUBLE | ACS DP03_0062E — median household income (USD) |
-| `median_age` | DOUBLE | ACS DP05_0018E — median age |
-| `poverty_rate_pct` | DOUBLE | ACS DP03_0128PE — % people below poverty level |
-| `ed_less_than_hs_pct` | DOUBLE | ACS DP02_0060PE + DP02_0061PE — % adults with less than HS diploma |
-| `unemployment_rate_pct` | DOUBLE | ACS DP03_0009PE — civilian unemployment rate |
-| `limited_english_pct` | DOUBLE | ACS DP02_0115PE — % who speak English less than "very well" |
-| `housing_cost_burden_pct` | DOUBLE | Computed: (DP04_0141E + DP04_0142E) / DP04_0136E × 100 — % renters paying 30%+ of income on rent |
-| `pop_density_per_sq_mi` | DOUBLE | Computed via DuckDB spatial JOIN against `raw_us_states`/`raw_us_counties`/`raw_us_zctas` — population per square mile |
-| `pop_growth_pct` | DOUBLE | `(pop_2024 − pop_2023) / pop_2023 × 100` — 1-year population growth |
-| `income_growth_pct` | DOUBLE | `(income_2024 − income_2023) / income_2023 × 100` — 1-year income growth |
+| Column | Type | Source | Notes |
+|---|---|---|---|
+| `vintage` | INTEGER | — | ACS release year (e.g. 2024) |
+| `geography_level` | VARCHAR | — | `"state"`, `"county"`, or `"zcta"` |
+| `geoid` | VARCHAR | — | 2-digit state FIPS (`"06"`), 5-digit county FIPS (`"06019"`), or 5-digit ZCTA (`"93701"`) |
+| `name` | VARCHAR | — | Human-readable name (e.g. `"California"`, `"Fresno County"`) |
+| `state_fp` | VARCHAR | — | 2-digit state FIPS for all levels |
+| `population` | BIGINT | **PEP 2024** (state/county); **ACS DP05_0001E** (ZCTA) | PEP = July 1, 2024 annual estimate. ZCTA stays ACS because PEP doesn't publish ZCTA-level estimates. PR/territories fall back to ACS (absent from PEP file). |
+| `median_hh_income` | DOUBLE | ACS DP03_0062E | Median household income (USD) |
+| `median_age` | DOUBLE | ACS DP05_0018E | Median age |
+| `poverty_rate_pct` | DOUBLE | ACS DP03_0128PE | % people below poverty level |
+| `ed_less_than_hs_pct` | DOUBLE | ACS DP02_0060PE + DP02_0061PE | % adults with less than HS diploma |
+| `unemployment_rate_pct` | DOUBLE | ACS DP03_0009PE | Civilian unemployment rate |
+| `limited_english_pct` | DOUBLE | ACS DP02_0115PE | % who speak English less than "very well" |
+| `housing_cost_burden_pct` | DOUBLE | Computed from ACS DP04_* | (DP04_0141E + DP04_0142E) / DP04_0136E × 100 — % renters paying 30%+ of income on rent |
+| `pop_density_per_sq_mi` | DOUBLE | Computed | Population (see `population` source) ÷ land area from DuckDB spatial JOIN against `raw_us_states`/`raw_us_counties`/`raw_us_zctas` |
+| `pop_growth_pct` | DOUBLE | **PEP 2024** (state/county); **ACS 2024 vs 2023** (ZCTA) | `(pop_current − pop_prior) / pop_prior × 100`. State/county: PEP 2024 vs PEP 2023 (point-in-time annual). ZCTA: ACS 5-Year 2024 vs 2023. |
+| `income_growth_pct` | DOUBLE | ACS 2024 vs 2023 | `(income_2024 − income_2023) / income_2023 × 100` — 1-year income growth |
 
 **Suppression codes:** Census values -666666666, -999999999, -888888888 are stored as NULL.
 
@@ -547,7 +557,8 @@ Single object. Returns 404 if no discovery data available for today.
 - States: all 52 US states and territories (national — used for color-scale baseline)
 - Counties: all 3,222 US counties (national — used for color-scale baseline)
 - ZCTAs: CA ZIP prefixes 900–961 only (1,802 rows). All 55 Fresno County ZCTAs included.
-- National income range (states): $26,297 (PR) → $109,870 (MD)
+- **ZCTA-level PEP:** PEP does not publish ZCTA-level population estimates. This is confirmed by inspecting `pep/charv` geography.json (only covers us/region/state/county/MSA). ZIP-tier Population is therefore always ACS 5-Year and will be ~2 years less current than state/county Population. This is a structural Census data limitation, not a code choice.
+- National income range (states): $26,297 (PR) → $109,870 (DC)
 - National income range (counties): $16,314 → $181,765
 
 ---
