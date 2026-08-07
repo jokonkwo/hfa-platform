@@ -332,7 +332,7 @@ export function Sidebar({ activeMetric, onMetricChange }: SidebarProps) {
       <Section title="Demographic" defaultOpen={false}>
         <div className="space-y-0.5">
           {DEMO_NUMERIC_FIELDS.map((field) => (
-            <label key={field} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs text-gray-700 hover:bg-gray-50">
+            <label key={field} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm text-gray-700 hover:bg-gray-50">
               <input
                 type="radio"
                 name="map-metric"

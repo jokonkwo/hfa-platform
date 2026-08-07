@@ -840,7 +840,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         const labelPaint: mapboxgl.SymbolPaint = {
           "text-color": "#111111",
           "text-halo-color": "rgba(255,255,255,0.92)",
-          "text-halo-width": 1.8,
+          "text-halo-width": 2.0,
         };
 
         // Labels use dedicated Point sources (largestPolyCenter placement).
@@ -849,17 +849,17 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         // zip=11 (secondary streets visible in the Streets basemap).
         map.addLayer({
           id: STATE_LABELS, type: "symbol", source: STATE_LABEL_PTS, minzoom: 5,
-          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 5, 9, 8, 12] as unknown as number },
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 5, 11, 8, 14] as unknown as number },
           paint: labelPaint,
         });
         map.addLayer({
           id: COUNTY_LABELS, type: "symbol", source: COUNTY_LABEL_PTS, minzoom: 9,
-          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 9, 12, 13] as unknown as number },
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 9, 11, 12, 15] as unknown as number },
           paint: labelPaint,
         });
         map.addLayer({
           id: ZIP_LABELS, type: "symbol", source: ZIP_LABEL_PTS, minzoom: 11,
-          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 11, 9, 13, 12] as unknown as number },
+          layout: { ...labelLayout, "text-size": ["interpolate", ["linear"], ["zoom"], 11, 11, 13, 14] as unknown as number },
           paint: labelPaint,
         });
 
