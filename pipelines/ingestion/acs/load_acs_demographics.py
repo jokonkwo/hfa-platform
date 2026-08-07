@@ -1,13 +1,23 @@
 """
-Annual refresh: Census ACS 5-Year Data Profile → MotherDuck HFA_DEV.raw_acs_demographics.
+Annual refresh: Census data → MotherDuck HFA_DEV.raw_acs_demographics.
 
-Pulls ACS 2024 (and 2023 for growth calcs) at:
+Data sources by geography and field:
+  - STATE / COUNTY — Population, Pop Density, Pop Growth:
+      Census PEP (Population Estimates Program) Vintage 2024 CSV.
+      URL: https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/counties/totals/co-est2024-alldata.csv
+      Provides POPESTIMATE2023 and POPESTIMATE2024 per county/state.
+      Coverage: 50 US states + DC. Puerto Rico and unincorporated territories
+      are absent from PEP and fall back to ACS 5-Year for those geoids.
+  - ZCTA (ZIP-tier) — Population, Pop Density, Pop Growth:
+      ACS 5-Year 2024 only (PEP does not publish ZCTA-level estimates).
+  - ALL levels — all other fields (Median HH Income, Median Age, Poverty Rate,
+      Ed Attainment, Unemployment, Linguistic Isolation, Housing Cost Burden,
+      Income Growth): ACS 5-Year Data Profile 2024 (and 2023 for growth).
+
+Pulls ACS 2024 (and 2023 for income_growth and ZCTA pop_growth) at:
   - STATE level: all 52 US states/territories (for=state:*)
   - COUNTY level: all ~3,222 US counties nationally (for=county:*&in=state:*)
-  - ZCTA level: California only (filtered from national pull; no change)
-
-National state/county coverage enables genuine nationwide color scales on the map
-instead of California-internal-only comparison.
+  - ZCTA level: California only (filtered from national pull)
 
 Re-runnable via CREATE OR REPLACE TABLE.
 
@@ -45,6 +55,14 @@ VARS_MAIN = (
 
 CA_FIPS = "06"
 CENSUS_BASE = "https://api.census.gov/data"
+
+# PEP Vintage 2024: county/state total population estimates.
+# Covers 50 US states + DC (3,144 county rows + 51 state rows, COUNTY=000).
+# Puerto Rico (FP=72) and territories are absent — ACS used as fallback for those.
+PEP_CSV_URL = (
+    "https://www2.census.gov/programs-surveys/popest/datasets/"
+    "2020-2024/counties/totals/co-est2024-alldata.csv"
+)
 
 # ZCTAs for California — full range 900–961 (all valid CA 3-digit prefixes)
 CA_ZIP_PREFIXES = tuple(f"{p:03d}" for p in range(900, 962))
@@ -97,6 +115,58 @@ def _fetch(url: str) -> list[list]:
                 raise
             time.sleep(2 ** attempt)
     return []
+
+
+def _fetch_bytes(url: str) -> bytes:
+    """Like _fetch but returns raw bytes (for non-JSON sources like CSV files)."""
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                return r.read()
+        except Exception as e:
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+    return b""
+
+
+def _fetch_pep_vintage2024() -> dict[str, dict[str, dict]]:
+    """Download PEP Vintage 2024 county/state totals CSV from Census FTP.
+
+    Returns population estimates keyed by FIPS:
+        {
+          "state":  {state_fp_2char: {"pop_2024": int, "pop_2023": int}},
+          "county": {geoid_5char:   {"pop_2024": int, "pop_2023": int}},
+        }
+
+    Coverage: 50 US states + DC (state COUNTY=000 rows) and 3,144 county rows.
+    Puerto Rico (FP=72) and unincorporated territories are absent; callers fall
+    back to ACS 5-Year for any geoid not found in the returned dicts.
+    """
+    import io
+    import csv as csv_mod
+
+    print("Downloading PEP Vintage 2024 county CSV...", end=" ", flush=True)
+    raw = _fetch_bytes(PEP_CSV_URL)
+    # Census FTP files use latin-1 (Puerto Rico's name contains non-ASCII)
+    text = raw.decode("latin-1")
+    reader = csv_mod.DictReader(io.StringIO(text))
+
+    states: dict[str, dict] = {}
+    counties: dict[str, dict] = {}
+
+    for row in reader:
+        entry = {
+            "pop_2024": int(row["POPESTIMATE2024"]),
+            "pop_2023": int(row["POPESTIMATE2023"]),
+        }
+        if row["COUNTY"] == "000":
+            states[row["STATE"]] = entry
+        else:
+            counties[row["STATE"] + row["COUNTY"]] = entry
+
+    print(f"{len(states)} state rows, {len(counties)} county rows", flush=True)
+    return {"state": states, "county": counties}
 
 
 def _parse_rows(rows: list[list], headers: list[str], geoid_fn, name_fn, state_fp_fn) -> list[dict]:
@@ -246,6 +316,9 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
     }
     print(f"  Loaded {len(state_names)} state names", flush=True)
 
+    # Fetch PEP Vintage 2024 for state/county population + growth
+    pep = _fetch_pep_vintage2024()
+
     # Build final rows (2024 vintage only, with growth rates from 2023)
     final_rows: list[tuple] = []
     vintage_main = 2024 if 2024 in data_by_vintage else min(data_by_vintage.keys())
@@ -266,18 +339,33 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
 
             prior = rows_prior.get(geoid)
 
-            pop_growth = None
+            # Income growth: always ACS (PEP has no income data)
             income_growth = None
             if prior:
-                pop_24 = row["population"]
-                pop_23 = prior["population"]
-                if pop_24 is not None and pop_23 is not None and pop_23 != 0:
-                    pop_growth = round((pop_24 - pop_23) / pop_23 * 100, 3)
-
                 inc_24 = row["median_hh_income"]
                 inc_23 = prior["median_hh_income"]
                 if inc_24 is not None and inc_23 is not None and inc_23 != 0:
                     income_growth = round((inc_24 - inc_23) / inc_23 * 100, 3)
+
+            # Population + pop_growth: PEP for state/county (where covered), ACS for ZCTA/missing
+            # PEP is annual point-in-time (July 1); more current than ACS 5-year rolling average.
+            # Puerto Rico (state_fp=72) and territories absent from PEP — ACS used as fallback.
+            pep_entry = pep.get(level, {}).get(geoid) if level in ("state", "county") else None
+            if pep_entry is not None:
+                population = pep_entry["pop_2024"]
+                pop_2023_pep = pep_entry["pop_2023"]
+                pop_growth = (
+                    round((population - pop_2023_pep) / pop_2023_pep * 100, 3)
+                    if pop_2023_pep else None
+                )
+            else:
+                population = row["population"]
+                pop_growth = None
+                if prior:
+                    pop_24 = row["population"]
+                    pop_23 = prior["population"]
+                    if pop_24 is not None and pop_23 is not None and pop_23 != 0:
+                        pop_growth = round((pop_24 - pop_23) / pop_23 * 100, 3)
 
             final_rows.append((
                 vintage_main,
@@ -285,7 +373,7 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
                 geoid,
                 name,
                 row["state_fp"],
-                row["population"],
+                population,
                 row["median_hh_income"],
                 row["median_age"],
                 row["poverty_rate_pct"],
@@ -426,7 +514,16 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
     for name, income, pct in ca_income:
         print(f"    {name}: ${income:,.0f} (national pct rank: {pct:.1f}%)")
 
-    print("\n  ZCTA unchanged check (Fresno ZIPs):")
+    print("\n  PEP source verification (Fresno County, CA):")
+    fresno_check = con.execute("""
+        SELECT name, population, pop_growth_pct
+        FROM raw_acs_demographics
+        WHERE geography_level = 'county' AND geoid = '06019'
+    """).fetchall()
+    for name, pop, growth in fresno_check:
+        print(f"    {name}: pop={pop:,} (PEP 2024 target=1,024,125), growth={growth}%")
+
+    print("\n  ZCTA unchanged check (Fresno ZIPs, still ACS-sourced):")
     zcta_check = con.execute("""
         SELECT name, population, median_hh_income
         FROM raw_acs_demographics
@@ -437,7 +534,7 @@ def main(check_only: bool = False, vintages: list[int] | None = None) -> None:
         print(f"    {name}: pop={pop}, income={income}")
 
     con.close()
-    print("\nDone. raw_acs_demographics is now in HFA_DEV.main (national state+county coverage)")
+    print("\nDone. raw_acs_demographics: state/county Population from PEP 2024; all other fields from ACS 5-Year 2024.")
 
 
 if __name__ == "__main__":
