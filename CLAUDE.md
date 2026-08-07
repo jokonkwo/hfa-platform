@@ -24,7 +24,7 @@ A map-first air quality intelligence platform for Fresno County, in the pattern 
 | Geospatial | DuckDB spatial extension (`ST_Contains`, `ST_Point`, `ST_Centroid`) | Working in `dim_sensors.sql` and `dim_zip_county.sql`. Known long-term limitation: no native spatial index yet — not a binding constraint at Fresno-county scale. |
 | Map geometry | **MotherDuck `raw_us_*` tables, queried at request time** | Static `fresno_zip_boundaries.geojson` (18 ZIPs) and `ca_county_boundaries.geojson` (58 counties) were removed 2026-07-30. Census TIGER 2025 shapefiles are now stored in HFA_DEV as `raw_us_states` (56 rows), `raw_us_counties` (3,235 rows), and `raw_us_zctas` (33,791 rows). Boundary endpoints query at request time using DuckDB spatial: counties use `WHERE state_fp = ?` (default '06'); ZIPs use `ST_Within(ST_Centroid(geom), county_geom)` (default Fresno County GEOID '06019', returns 55 ZIPs — all 18 pilot ZIPs plus 37 rural Fresno County ZIPs). Optional query params: `?state=` for counties, `?county=` for ZIPs. Source .zip files are local only (not in repo): `~/Downloads/tl_2025_us_*.zip`. **PMTiles (Tippecanoe → Cloudflare R2 → MapLibre) remains the plan if coverage expands significantly** — the MotherDuck approach is sufficient for California-scale, single-scope queries at low volume. |
 | Basemap | **Mapbox Streets community template** (`mapbox://styles/jokonkwo/cmsiiy10l001201sl6n3z5nz9`) | Replaced Light v11 (2026-08-06 — Light v11 was wrong: near-grayscale, no terrain, no visible highways). Custom style cloned from Mapbox Streets community template into the project's Mapbox Studio account; set to public visibility. Confirmed via direct visual comparison at Hudson Bay/Canada AND Fresno County: green terrain color, place labels, highway lines, and data overlays (county fills, ZIP boundaries, AQI legend) all render correctly on top. Requires `NEXT_PUBLIC_MAPBOX_TOKEN` env var (stored in `apps/web/.env.local`). |
-| Web | Next.js + Mapbox GL JS | `apps/web` exists and is running. Map has Mapbox Outdoors v12 basemap, GeoJSON fill layer for ZIP boundaries colored by AQI, county drill-down layer (CA-wide at zoom 5, Fresno-focused at zoom 12 via County/ZIP tier toggle in header), sidebar, filter, detail panel, About panel. |
+| Web | Next.js + Mapbox GL JS | `apps/web` exists and is running. Custom Mapbox Streets basemap (`jokonkwo/cmsiiy10l001201sl6n3z5nz9`). Floating search/tier toolbar top-right. Three-tier drill-down: State (all 56 US, CA highlighted) → County (all 3,235 US counties, fine-detail per-state) → ZIP (55 Fresno County ZIPs). Fills colored by AQI category (pastel 6-color EPA scale) or demographics metric (7-bin quantile, blue→transparent→red palette, ~0.40 opacity). Sidebar, filter panel, detail panel (cigarette-equivalence card, historical AQI section), Table View, compact Mapbox attribution. |
 | Mobile | Expo + React Native | Not yet implemented — `apps/mobile` doesn't exist. |
 | Scheduling | **Paused** — pipeline proven, ingestion deliberately off | `on.schedule` removed from both workflows (2026-07-25). cron-job.org is configured and was firing every 10 min, but ingestion is paused while PurpleAir API point budget is confirmed sustainable. Both workflows are `workflow_dispatch`-only; manual runs work via the Actions tab or `gh workflow run`. To resume: re-enable the cron-job.org jobs. See `docs/scheduling.md`. |
 | PurpleAir sourcing | Two-phase: small existing public sensor set now, nonprofit-owned sensors post-POC | Free API access applies once sensors are owned. |
@@ -208,11 +208,27 @@ Good `#8FE3A8` · Moderate `#FCE083` · USG `#F5B375` · Unhealthy `#EF8C8C` · 
 
 1. **Different population source:** Prior to 2026-08-06, our Population was ACS 5-Year 2024 while Reventure uses PEP annual estimates — this has since been corrected (state/county Population is now PEP Vintage 2024, matching Reventure's values for Fresno County exactly). The remaining tier mismatches on specific counties are likely explained by #2 below.
 
-2. **Different binning method or bin count:** Our 7-bin uniform quantile assigns equal numbers of counties per bin. Reventure likely uses a different approach — Jenks natural breaks, equal-interval, or a 5-bin quintile scheme — which produces different bin boundaries at absolute value thresholds. This is a visual design choice, not a data accuracy issue.
+2. **Different binning method or bin count:** Our 7-bin uniform quantile assigns equal numbers of counties per bin. Reventure's map is **confirmed to also use 7 color tiers** (verified 2026-08-07 by direct visual inspection of their CA county Population choropleth — 7 distinct color levels visible on the map despite the legend only showing a 5-stop gradient strip). Different bin boundaries at absolute population thresholds are expected due to their different binning algorithm. This is a visual design choice, not a data accuracy issue.
 
 **Do not switch to Jenks or 5-bin** without a deliberate product decision that the current bin-per-county distribution behavior is a problem. The current breakpoints (for county Population: ~6,675 / 12,737 / 20,642 / 33,584 / 57,901 / 148,002) correctly place each tier at equal county counts nationally.
 
-**Implemented in:** `apps/web/lib/demographics.ts` — `getQuantileBreakpoints()` (6 thresholds at 1/7…6/7 positions), `getBin()` (strict `<` comparison, standard quantile behavior).
+**Choropleth palette — `DEMO_BINS` in `apps/web/lib/demographics.ts`:**
+
+| Bin | Color | Notes |
+|---|---|---|
+| 0 (lowest) | `#0000FF` | Pure blue |
+| 1 | `#6265FC` | Medium blue |
+| 2 | `#B7AFEE` | Light blue-purple |
+| 3 (middle) | `rgba(0,0,0,0)` | **Fully transparent — counties in the neutral middle range appear as basemap** |
+| 4 | `#FFA095` | Light red |
+| 5 | `#FF564D` | Medium red |
+| 6 (highest) | `#FF0000` | Pure red |
+
+Bin 3 transparency is confirmed by Reventure pixel evidence: Lassen County (~31K pop) and Glenn County (~29K pop) both fall in the national bin-3 range (20,642–33,584) and render as pure basemap terrain color (no visible fill). **Do not fill bin 3 with any color without new evidence from a fresh Reventure comparison.**
+
+**Fill opacity:** ~0.40 active, ~0.60 hover (all demo-mode tiers). Back-calculated from Reventure pixel samples: bin-5 red county fill at op≈0.35 over warm basemap predicts rgb(236,170,150), matching Reventure's sampled rgb(233,166,151) within 3pts. Set in `applyTierStyling()` in `apps/web/components/MapView.tsx`.
+
+**Implemented in:** `apps/web/lib/demographics.ts` — `DEMO_BINS` (7-entry palette), `getQuantileBreakpoints()` (6 thresholds at 1/7…6/7 positions), `getBin()` (strict `<` comparison, standard quantile behavior).
 
 ---
 
