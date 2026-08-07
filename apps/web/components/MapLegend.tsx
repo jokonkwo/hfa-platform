@@ -38,7 +38,7 @@ export function MapLegend({
       : zctaDemographics;
 
   return (
-    <div className="pointer-events-none absolute bottom-8 right-2 z-20 select-none rounded-lg border border-gray-200 bg-white/95 px-3 py-2.5 shadow-md">
+    <div className="pointer-events-none absolute bottom-8 right-14 z-20 select-none rounded-lg border border-gray-200 bg-white/95 px-3 py-2.5 shadow-md">
       {activeMetric === "aqi" ? (
         <AqiLegend />
       ) : (

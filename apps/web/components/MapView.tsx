@@ -762,7 +762,7 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView(
         preserveDrawingBuffer: true,
       });
       mapRef.current = map;
-      map.addControl(new mapboxgl.NavigationControl(), "top-left");
+      map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
       const tooltipEl = document.createElement("div");
       tooltipEl.id = "hfa-hover-tooltip";
